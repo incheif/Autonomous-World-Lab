@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Autonomous-World-Lab | 3D Simulation Viewer</title>
+  <link rel="stylesheet" href="/static/viewer.css">
+  <!-- Three.js and OrbitControls from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+  <!-- 3D Canvas Container -->
+  <div id="canvas-container"></div>
+
+  <!-- Top Header / Brand -->
+  <header class="hud-header">
+    <div class="brand">
+      <div class="logo-mark">⚡</div>
+      <div class="brand-text">
+        <span class="title">AUTONOMOUS-WORLD-LAB</span>
+        <span class="subtitle">Idea 4 · Phase 1 Kinematic Simulation</span>
+      </div>
+    </div>
+    <div class="header-status">
+      <div id="connection-pill" class="pill pill-offline">
+        <span class="pill-dot"></span>
+        <span id="connection-text">CONNECTING...</span>
+      </div>
+      <div id="collision-pill" class="pill pill-danger" style="display: none;">
+        <span>OFF-ROAD / COLLISION</span>
+      </div>
+      <div id="goal-pill" class="pill pill-success" style="display: none;">
+        <span>GOAL REACHED</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Left Telemetry HUD -->
+  <div class="hud-panel hud-left">
+    <div class="panel-header">VEHICLE TELEMETRY</div>
+    
+    <div class="metric-row">
+      <span class="label">Speed</span>
+      <span class="value" id="val-speed">0.0 <small>km/h</small></span>
+    </div>
+    <div class="metric-row">
+      <span class="label">Steering</span>
+      <span class="value" id="val-steer">0.0°</span>
+    </div>
+    <div class="metric-row">
+      <span class="label">Acceleration</span>
+      <span class="value" id="val-accel">0.00 <small>m/s²</small></span>
+    </div>
+    <div class="metric-row">
+      <span class="label">Heading (Yaw)</span>
+      <span class="value" id="val-yaw">0.0°</span>
+    </div>
+    <div class="metric-row">
+      <span class="label">Position (X, Y)</span>
+      <span class="value" id="val-pos">0.00, 0.00 <small>m</small></span>
+    </div>
+
+    <div class="panel-divider"></div>
+
+    <div class="panel-header">SIMULATION CLOCK</div>
+    <div class="metric-row">
+      <span class="label">Sim Time</span>
+      <span class="value" id="val-time">0.00 <small>s</small></span>
+    </div>
+    <div class="metric-row">
+      <span class="label">Step Count</span>
+      <span class="value" id="val-step">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="label">Timestep (dt)</span>
+      <span class="value">0.020 <small>s (50Hz)</small></span>
+    </div>
+  </div>
+
+  <!-- Right Control Panel -->
+  <div class="hud-panel hud-right">
+    <div class="panel-header">CAMERA PERSPECTIVE</div>
+    <div class="btn-group">
+      <button class="btn btn-cam active" data-cam="chase">Chase Cam</button>
+      <button class="btn btn-cam" data-cam="cockpit">Cockpit</button>
+      <button class="btn btn-cam" data-cam="drone">Top Drone</button>
+      <button class="btn btn-cam" data-cam="orbit">Free Orbit</button>
+    </div>
+
+    <div class="panel-divider"></div>
+
+    <div class="panel-header">ROAD SCENARIO</div>
+    <div class="btn-group">
+      <button class="btn btn-road active" data-road="s_curve">S-Curve</button>
+      <button class="btn btn-road" data-road="curve">Gentle Curve</button>
+      <button class="btn btn-road" data-road="straight">Straight</button>
+    </div>
+
+    <div class="panel-divider"></div>
+
+    <div class="panel-header">MANUAL DRIVE (KEYBOARD)</div>
+    <div class="key-guide">
+      <div><kbd>W</kbd> / <kbd>↑</kbd> Accelerate</div>
+      <div><kbd>S</kbd> / <kbd>↓</kbd> Brake / Reverse</div>
+      <div><kbd>A</kbd> / <kbd>←</kbd> Steer Left</div>
+      <div><kbd>D</kbd> / <kbd>→</kbd> Steer Right</div>
+      <div><kbd>SPACE</kbd> Emergency Stop</div>
+      <div><kbd>R</kbd> Reset Simulation</div>
+    </div>
+
+    <div class="btn-actions">
+      <button id="btn-reset" class="btn btn-secondary">Reset (R)</button>
+      <button id="btn-estop" class="btn btn-danger">E-STOP (Space)</button>
+    </div>
+  </div>
+
+  <!-- Bottom Trajectory Breadcrumbs / Status Bar -->
+  <div class="hud-bottom">
+    <span>ISO 8855 Coordinate Frame: <strong>+X Forward (East)</strong> · <strong>+Y Lateral (North)</strong> · <strong>+Z Normal (Up)</strong></span>
+    <span>Kinematic Bicycle Model: <strong>L = 2.80m</strong> · <strong>δ_max = 35°</strong></span>
+  </div>
+
+  <script src="/static/viewer.js"></script>
+</body>
+</html>
