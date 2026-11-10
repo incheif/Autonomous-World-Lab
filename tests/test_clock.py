@@ -37,3 +37,4 @@ def test_clock_reset():
     clock.reset(start_time_sec=10.0)
     assert clock.time == 10.0
     assert clock.step_count == 0
+

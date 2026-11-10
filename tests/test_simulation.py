@@ -57,3 +57,4 @@ def test_headless_deterministic_replay():
             assert st1.y == st2.y
             assert st1.yaw == st2.yaw
             assert st1.velocity == st2.velocity
+

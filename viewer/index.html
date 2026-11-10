@@ -63,6 +63,28 @@
 
     <div class="panel-divider"></div>
 
+    <div class="panel-header">32-BEAM LIDAR SENSOR</div>
+    <div class="metric-row">
+      <span class="label">Beams / Rings</span>
+      <span class="value">32 Channels</span>
+    </div>
+    <div class="metric-row">
+      <span class="label">Valid Hits</span>
+      <span class="value" id="val-lidar-hits">0 <small>pts</small></span>
+    </div>
+    <div class="metric-row">
+      <span class="label">Noise / Dropout</span>
+      <span class="value">σ=2cm · 1.5%</span>
+    </div>
+    <div class="metric-row">
+      <span class="label">Point Cloud</span>
+      <span class="value">
+        <button id="btn-toggle-lidar" class="btn btn-sm active" style="padding: 2px 8px; font-size: 11px;">VISIBLE</button>
+      </span>
+    </div>
+
+    <div class="panel-divider"></div>
+
     <div class="panel-header">SIMULATION CLOCK</div>
     <div class="metric-row">
       <span class="label">Sim Time</span>
@@ -124,3 +146,4 @@
   <script src="/static/viewer.js"></script>
 </body>
 </html>
+

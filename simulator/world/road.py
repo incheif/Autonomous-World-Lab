@@ -37,12 +37,14 @@ class RoadMap:
         road_length_m: float = 120.0,
         lane_width_m: float = 3.75,
         num_lanes: int = 2,
+        with_obstacles: bool = True,
     ):
         self.road_type: str = road_type
         self.road_length_m: float = float(road_length_m)
         self.lane_width_m: float = float(lane_width_m)
         self.num_lanes: int = int(num_lanes)
         self.total_width_m: float = self.lane_width_m * self.num_lanes
+        self.with_obstacles: bool = with_obstacles
 
         self.segments: List[RoadSegment] = []
         self.obstacles: List[Obstacle] = []
@@ -52,6 +54,8 @@ class RoadMap:
         self.goal_pose: Tuple[float, float, float] = (self.road_length_m - 10.0, 0.0, 0.0)
 
         self._generate_road()
+        if self.with_obstacles:
+            self._add_default_obstacles()
 
     def _generate_road(self) -> None:
         """Constructs discrete road segments based on configuration."""
@@ -109,9 +113,69 @@ class RoadMap:
             goal_seg = self.segments[goal_idx]
             self.goal_pose = (goal_seg.center_x, goal_seg.center_y, goal_seg.yaw)
 
+    def _add_default_obstacles(self) -> None:
+        """Places realistic static obstacle boxes along the road."""
+        self.obstacles.clear()
+        half_lane = self.lane_width_m / 2.0
+
+        if self.road_type == "straight":
+            # Obstacle 1: Parked obstacle in right lane at X = 35m
+            self.add_obstacle(Obstacle(
+                obstacle_id="obs_box_1",
+                x=35.0, y=-half_lane, z=0.0,
+                length=3.0, width=1.8, height=1.5,
+                yaw=0.0,
+            ))
+            # Obstacle 2: Construction barrier in left lane at X = 70m
+            self.add_obstacle(Obstacle(
+                obstacle_id="obs_box_2",
+                x=70.0, y=half_lane, z=0.0,
+                length=2.5, width=1.6, height=1.4,
+                yaw=0.08,
+            ))
+        elif self.road_type in ("curve", "s_curve"):
+            # Sample obstacles along the centerline offset
+            for idx, frac in enumerate([0.30, 0.65], start=1):
+                seg_idx = int(len(self.segments) * frac)
+                if seg_idx < len(self.segments):
+                    seg = self.segments[seg_idx]
+                    # Alternate left/right lane
+                    lane_sign = 1.0 if idx % 2 == 1 else -1.0
+                    nx = -math.sin(seg.yaw)
+                    ny = math.cos(seg.yaw)
+                    ox = seg.center_x + (lane_sign * half_lane) * nx
+                    oy = seg.center_y + (lane_sign * half_lane) * ny
+                    self.add_obstacle(Obstacle(
+                        obstacle_id=f"obs_curve_{idx}",
+                        x=round(ox, 3), y=round(oy, 3), z=0.0,
+                        length=3.2, width=1.8, height=1.5,
+                        yaw=round(seg.yaw, 3),
+                    ))
+
     def add_obstacle(self, obstacle: Obstacle) -> None:
         """Adds a static obstacle to the road."""
         self.obstacles.append(obstacle)
+
+    def check_obstacle_collision(self, vehicle_corners: List[Tuple[float, float]]) -> bool:
+        """
+        Checks if vehicle 2D bounding polygon intersects any obstacle bounding box.
+        """
+        for obs in self.obstacles:
+            cos_o = math.cos(obs.yaw)
+            sin_o = math.sin(obs.yaw)
+            hx = obs.length / 2.0
+            hy = obs.width / 2.0
+
+            for vx, vy in vehicle_corners:
+                dx = vx - obs.x
+                dy = vy - obs.y
+                # Transform to obstacle local frame
+                lx = dx * cos_o + dy * sin_o
+                ly = -dx * sin_o + dy * cos_o
+
+                if abs(lx) <= hx and abs(ly) <= hy:
+                    return True
+        return False
 
     def check_boundary_collision(self, vehicle_corners: List[Tuple[float, float]]) -> bool:
         """
@@ -163,3 +227,4 @@ class RoadMap:
             "goal_pose": [round(v, 4) for v in self.goal_pose],
             "obstacles": [obs.to_dict() for obs in self.obstacles],
         }
+

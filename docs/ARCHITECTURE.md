@@ -123,3 +123,4 @@ $$\Delta t = 0.02\text{ s} \quad (50\text{ Hz})$$
   - `road`: Road centerlines, boundary polygons, start marker, goal marker.
   - `command`: Current active control command (`accel, steering, brake`).
   - `status`: `{collision: bool, emergency_stop: bool, goal_reached: bool}`
+

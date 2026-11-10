@@ -121,3 +121,4 @@ def test_deterministic_replay():
             assert s1.yaw == s2.yaw
             assert s1.velocity == s2.velocity
             assert s1.steering_angle == s2.steering_angle
+

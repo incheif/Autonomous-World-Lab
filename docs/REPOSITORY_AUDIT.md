@@ -66,3 +66,4 @@ This report documents the local inspection of the four reference repositories lo
 1. **Zero Runtime Coupling:** Autonomous-World-Lab maintains zero dependencies on `AERO` or the four external repos.
 2. **Attribution:** All mathematical equations and algorithmic inspirations adapted from Shisato Yano's work are cited in `THIRD_PARTY_NOTICES.md`.
 3. **Clean Decoupling:** Simulation physics must be 100% headless, deterministic, and testable without Three.js or browser UI running.
+

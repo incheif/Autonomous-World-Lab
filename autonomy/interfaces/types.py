@@ -106,9 +106,10 @@ class Obstacle:
     obstacle_id: str
     x: float
     y: float
-    length: float  # Extent along obstacle heading [m]
-    width: float   # Extent perpendicular to heading [m]
-    height: float  # Vertical height [m]
+    z: float = 0.0 # Elevation of obstacle base [m]
+    length: float = 2.0  # Extent along obstacle heading [m]
+    width: float = 2.0   # Extent perpendicular to heading [m]
+    height: float = 1.5  # Vertical height [m]
     yaw: float = 0.0
     velocity: float = 0.0
 
@@ -117,9 +118,68 @@ class Obstacle:
             "id": self.obstacle_id,
             "x": round(self.x, 4),
             "y": round(self.y, 4),
+            "z": round(self.z, 4),
             "length": round(self.length, 4),
             "width": round(self.width, 4),
             "height": round(self.height, 4),
             "yaw": round(self.yaw, 4),
             "velocity": round(self.velocity, 4),
         }
+
+
+@dataclass
+class LidarScan:
+    """
+    Single LiDAR sweep data packet.
+    """
+    ranges: np.ndarray             # Measured range array [m]
+    angles_azimuth: np.ndarray     # Horizontal azimuth angles [rad]
+    angles_elevation: np.ndarray   # Vertical elevation angles [rad]
+    intensities: np.ndarray        # Return intensity / reflection factor [0.0 to 1.0]
+    valid_mask: np.ndarray         # Boolean mask: True if valid return
+    timestamp: float = 0.0         # Timestamp of scan [s]
+
+    @property
+    def points_local(self) -> np.ndarray:
+        """
+        Computes 3D Cartesian coordinates in sensor frame (X forward, Y left, Z up).
+        Only returns valid hit points. Shape: (M, 3)
+        """
+        valid_ranges = self.ranges[self.valid_mask]
+        valid_az = self.angles_azimuth[self.valid_mask]
+        valid_el = self.angles_elevation[self.valid_mask]
+
+        cos_el = np.cos(valid_el)
+        px = valid_ranges * cos_el * np.cos(valid_az)
+        py = valid_ranges * cos_el * np.sin(valid_az)
+        pz = valid_ranges * np.sin(valid_el)
+
+        return np.column_stack((px, py, pz))
+
+    def to_dict(self, max_points: int = 1500) -> Dict[str, Any]:
+        """
+        Serializes scan points for WebSocket / Three.js telemetry.
+        Decimates points if needed to maintain high network throughput.
+        """
+        pts = self.points_local
+        if len(pts) > max_points:
+            indices = np.linspace(0, len(pts) - 1, max_points, dtype=int)
+            pts = pts[indices]
+
+        return {
+            "timestamp": round(self.timestamp, 4),
+            "total_beams": int(len(self.ranges)),
+            "valid_returns": int(np.sum(self.valid_mask)),
+            "points": [[round(float(p[0]), 3), round(float(p[1]), 3), round(float(p[2]), 3)] for p in pts],
+        }
+
+
+@dataclass
+class LidarObservation:
+    """
+    Dual observation container strictly separating Ground Truth from Noisy Sensor data.
+    """
+    noisy_scan: LidarScan          # Passed to perception & planning (has noise & dropouts)
+    ground_truth_scan: LidarScan   # Reserved strictly for evaluation & metrics
+
+

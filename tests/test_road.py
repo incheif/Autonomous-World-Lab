@@ -53,3 +53,4 @@ def test_goal_detection():
     assert not road.check_goal_reached(0.0, 0.0)
     # At goal
     assert road.check_goal_reached(gx, gy, tolerance_m=2.0)
+

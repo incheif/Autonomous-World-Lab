@@ -43,7 +43,7 @@ flowchart TD
 
 ---
 
-## ✨ Features (Phase 1)
+## ✨ Features (Phases 1 & 2)
 
 1. **Deterministic Headless Core**:
    - Fixed simulation timestep ($\Delta t = 0.02\text{ s} = 50\text{ Hz}$).
@@ -52,10 +52,19 @@ flowchart TD
    - Referenced to the rear axle center following ISO 8855 standard coordinate conventions.
    - 4th-Order Runge-Kutta (RK4) numerical integration.
    - Strict actuator saturation: steering angle limit ($|\delta| \le 35^\circ$), steering slew rate limit ($|\dot{\delta}| \le 60^\circ/\text{s}$), acceleration envelope ($-6.0\text{ m/s}^2 \le a \le +3.5\text{ m/s}^2$).
-3. **Structured Road & Boundary Checks**:
+3. **32-Beam 3D LiDAR Simulation (Phase 2)**:
+   - 32-channel vertical laser rings with configurable vertical FoV ($-20^\circ$ to $+10^\circ$) and $360^\circ$ azimuth sweeps.
+   - Vectorized 3D raycasting against oriented bounding boxes (OBBs) using the Kay-Kajiya slab method and road ground plane returns.
+   - Physical occlusion modeling: Nearer obstacles cleanly occlude farther geometry.
+   - Realistic Gaussian range noise ($\sigma = 2\text{ cm}$) and stochastic beam dropouts ($1.5\%$).
+   - Strict separation between **Ground Truth** scans (for metrics) and **Noisy Observations** (for autonomy stack).
+   - Scan export/replay with compressed NPZ serialization.
+4. **Structured Road & Obstacles**:
    - Dynamic road generation (Straight, Gentle Curve, S-Curve) with customizable lane width and boundaries.
-   - Continuous 4-corner bounding box collision checks detecting off-road events.
-4. **Three.js 60 FPS 3D WebGL Studio**:
+   - Static 3D obstacle boxes (parked vehicles, construction barriers) with 3D hazard meshes.
+   - Continuous 4-corner bounding box collision checks detecting off-road and obstacle collision events.
+5. **Three.js 60 FPS 3D WebGL Studio**:
+   - Volumetric 3D LiDAR point cloud rendered with elevation-based Turbo color gradient (purple ground, cyan obstacles, gold car tops).
    - Metallic chassis, glass cabin, front headlights, rear brake lights.
    - **Front wheels visibly turn** to match `steering_angle` $\delta$.
    - Wheels dynamically rotate with longitudinal vehicle velocity $v$.
@@ -116,7 +125,7 @@ python run_viewer.py
 
 - [x] **Phase 0**: Repository audit, licenses, third-party notices, and decoupled architecture.
 - [x] **Phase 1**: Minimal 3D road, kinematic vehicle dynamics, fixed-step clock, manual driving, headless tests, and Three.js viewer.
-- [ ] **Phase 2**: 32-Beam LiDAR simulation (configurable V-FoV, horizontal resolution, range noise, beam dropout, raycasting, and Three.js point cloud returns).
+- [x] **Phase 2**: 32-Beam LiDAR simulation (configurable V-FoV, horizontal resolution, range noise, beam dropout, raycasting, and Three.js point cloud returns).
 - [ ] **Phase 3**: Perception & Mapping (Euclidean point clustering, oriented bounding box estimation, 2D occupancy grid, and vehicle footprint inflation).
 - [ ] **Phase 4**: Autonomous Navigation Baseline (Global A*, local obstacle avoidance, Pure Pursuit path tracking, and emergency stop).
 - [ ] **Phase 5**: Benchmark Suite & Modular Algorithms (Controller & planner face-offs across standardized test tracks).
@@ -130,3 +139,4 @@ python run_viewer.py
 * [Architecture Specification](docs/ARCHITECTURE.md)
 * [Repository Audit & Reuse Report](docs/REPOSITORY_AUDIT.md)
 * [Third-Party Notices](THIRD_PARTY_NOTICES.md)
+

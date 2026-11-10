@@ -38,6 +38,11 @@ class SimulationViewer {
     this.trailPoints = [];
     this.trailLine = null;
 
+    // 32-Beam LiDAR Point Cloud
+    this.showLidar = true;
+    this.maxLidarPoints = 2000;
+    this.lidarPointsMesh = null;
+
     this.initThree();
     this.initControls();
     this.initWebSocket();
@@ -101,11 +106,37 @@ class SimulationViewer {
     this.roadGroup = new THREE.Group();
     this.scene.add(this.roadGroup);
 
+    this.obstacleGroup = new THREE.Group();
+    this.scene.add(this.obstacleGroup);
+
     this.vehicleGroup = new THREE.Group();
     this.scene.add(this.vehicleGroup);
 
     this.buildVehicleMesh();
     this.initTrail();
+    this.initLidarPointCloud();
+  }
+
+  initLidarPointCloud() {
+    const maxPts = this.maxLidarPoints;
+    const positions = new Float32Array(maxPts * 3);
+    const colors = new Float32Array(maxPts * 3);
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+      size: 0.28,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.95,
+      blending: THREE.AdditiveBlending,
+    });
+
+    this.lidarPointsMesh = new THREE.Points(geometry, material);
+    this.lidarPointsMesh.frustumCulled = false;
+    this.scene.add(this.lidarPointsMesh);
   }
 
   buildVehicleMesh() {
@@ -338,6 +369,93 @@ class SimulationViewer {
       goalMarker.position.copy(gp);
       this.roadGroup.add(goalMarker);
     }
+
+    // 5. Build 3D Obstacles
+    this.rebuildObstacles(roadData.obstacles);
+  }
+
+  rebuildObstacles(obstacles) {
+    while (this.obstacleGroup.children.length > 0) {
+      const obj = this.obstacleGroup.children.pop();
+      if (obj.geometry) obj.geometry.dispose();
+      this.obstacleGroup.remove(obj);
+    }
+    if (!obstacles) return;
+
+    for (const obs of obstacles) {
+      const boxGeo = new THREE.BoxGeometry(obs.length, obs.height, obs.width);
+      const boxMat = new THREE.MeshStandardMaterial({
+        color: 0xf97316, // Vibrant orange warning barrier
+        roughness: 0.35,
+        metalness: 0.25,
+      });
+      const boxMesh = new THREE.Mesh(boxGeo, boxMat);
+      boxMesh.castShadow = true;
+      boxMesh.receiveShadow = true;
+
+      const pos = simToThree(obs.x, obs.y, (obs.z || 0) + obs.height / 2.0);
+      boxMesh.position.copy(pos);
+      boxMesh.rotation.y = obs.yaw;
+
+      const wireGeo = new THREE.EdgesGeometry(boxGeo);
+      const wireMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 2 });
+      const wireMesh = new THREE.LineSegments(wireGeo, wireMat);
+      boxMesh.add(wireMesh);
+
+      this.obstacleGroup.add(boxMesh);
+    }
+  }
+
+  updateLidarPointCloud(s) {
+    if (!this.lidarPointsMesh) return;
+    if (!this.showLidar || !s.lidar || !s.lidar.points) {
+      this.lidarPointsMesh.geometry.setDrawRange(0, 0);
+      return;
+    }
+
+    const pts = s.lidar.points;
+    const v = s.vehicle;
+    const cosY = Math.cos(v.yaw);
+    const sinY = Math.sin(v.yaw);
+    const count = Math.min(pts.length, this.maxLidarPoints);
+
+    const posArray = this.lidarPointsMesh.geometry.attributes.position.array;
+    const colArray = this.lidarPointsMesh.geometry.attributes.color.array;
+
+    for (let i = 0; i < count; i++) {
+      const lx = pts[i][0];
+      const ly = pts[i][1];
+      const lz = pts[i][2];
+
+      // Sensor mount offset: (1.4, 0.0, 1.6)
+      const wx = v.x + (1.4 * cosY) + (lx * cosY - ly * sinY);
+      const wy = v.y + (1.4 * sinY) + (lx * sinY + ly * cosY);
+      const wz = 1.6 + lz;
+
+      const threeP = simToThree(wx, wy, wz);
+      posArray[i * 3 + 0] = threeP.x;
+      posArray[i * 3 + 1] = threeP.y;
+      posArray[i * 3 + 2] = threeP.z;
+
+      // Turbo elevation color gradient
+      if (wz <= 0.15) {
+        colArray[i * 3 + 0] = 0.45;
+        colArray[i * 3 + 1] = 0.15;
+        colArray[i * 3 + 2] = 0.85;
+      } else if (wz <= 0.9) {
+        colArray[i * 3 + 0] = 0.10;
+        colArray[i * 3 + 1] = 0.95;
+        colArray[i * 3 + 2] = 0.90;
+      } else {
+        colArray[i * 3 + 0] = 1.00;
+        colArray[i * 3 + 1] = 0.75;
+        colArray[i * 3 + 2] = 0.10;
+      }
+    }
+
+    this.lidarPointsMesh.geometry.setDrawRange(0, count);
+    this.lidarPointsMesh.geometry.attributes.position.needsUpdate = true;
+    this.lidarPointsMesh.geometry.attributes.color.needsUpdate = true;
   }
 
   initWebSocket() {
@@ -443,6 +561,9 @@ class SimulationViewer {
     // Update trail
     this.updateTrail(threePos);
 
+    // Update 3D LiDAR point cloud
+    this.updateLidarPointCloud(s);
+
     // Update camera rig
     this.updateCamera(v);
 
@@ -503,6 +624,13 @@ class SimulationViewer {
     document.getElementById("val-time").innerHTML = `${s.sim_time.toFixed(2)} <small>s</small>`;
     document.getElementById("val-step").textContent = s.step;
 
+    // LiDAR stats
+    const lidarHits = s.status.lidar_points !== undefined ? s.status.lidar_points : (s.lidar ? s.lidar.valid_returns : 0);
+    const lidarHitsEl = document.getElementById("val-lidar-hits");
+    if (lidarHitsEl) {
+      lidarHitsEl.innerHTML = `${lidarHits} <small>pts</small>`;
+    }
+
     // Badges
     const collPill = document.getElementById("collision-pill");
     const goalPill = document.getElementById("goal-pill");
@@ -531,6 +659,24 @@ class SimulationViewer {
         this.resetSimulation(roadType);
       });
     });
+
+    // LiDAR toggle button
+    const toggleLidarBtn = document.getElementById("btn-toggle-lidar");
+    if (toggleLidarBtn) {
+      toggleLidarBtn.addEventListener("click", () => {
+        this.showLidar = !this.showLidar;
+        if (this.showLidar) {
+          toggleLidarBtn.classList.add("active");
+          toggleLidarBtn.textContent = "VISIBLE";
+        } else {
+          toggleLidarBtn.classList.remove("active");
+          toggleLidarBtn.textContent = "HIDDEN";
+          if (this.lidarPointsMesh) {
+            this.lidarPointsMesh.geometry.setDrawRange(0, 0);
+          }
+        }
+      });
+    }
 
     // Reset button
     document.getElementById("btn-reset").addEventListener("click", () => {
@@ -603,3 +749,4 @@ function jsonParseSafe(str) {
 window.addEventListener("DOMContentLoaded", () => {
   new SimulationViewer();
 });
+

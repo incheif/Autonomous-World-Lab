@@ -8,6 +8,8 @@ from .types import (
     TrajectoryPoint,
     PlannedTrajectory,
     Obstacle,
+    LidarScan,
+    LidarObservation,
 )
 
 __all__ = [
@@ -16,4 +18,7 @@ __all__ = [
     "TrajectoryPoint",
     "PlannedTrajectory",
     "Obstacle",
+    "LidarScan",
+    "LidarObservation",
 ]
+

@@ -132,3 +132,4 @@ async def websocket_endpoint(websocket: WebSocket):
 # Mount static assets for Three.js viewer
 if VIEWER_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(VIEWER_DIR)), name="static")
+

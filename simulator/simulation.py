@@ -5,11 +5,14 @@ and state logging in headless or interactive viewer modes.
 """
 
 from typing import Dict, Any, Optional, Tuple, List
-from autonomy.interfaces.types import VehicleState, ControlCommand
+import numpy as np
+
+from autonomy.interfaces.types import VehicleState, ControlCommand, LidarObservation
 from simulator.clock import SimulationClock
 from simulator.vehicle.kinematic_bicycle import KinematicBicycleModel, VehicleParameters
 from simulator.world.road import RoadMap
 from simulator.logger import SimulationLogger
+from simulator.sensors.lidar import LidarSensor, LidarParameters
 
 
 class Simulation:
@@ -23,21 +26,27 @@ class Simulation:
         dt_sec: float = 0.02,
         road: Optional[RoadMap] = None,
         vehicle_params: Optional[VehicleParameters] = None,
+        lidar: Optional[LidarSensor] = None,
     ):
         self.clock: SimulationClock = SimulationClock(dt_sec=dt_sec)
         self.road: RoadMap = road or RoadMap(road_type="straight", road_length_m=120.0)
         self.vehicle: KinematicBicycleModel = KinematicBicycleModel(
             params=vehicle_params or VehicleParameters()
         )
+        self.lidar: LidarSensor = lidar or LidarSensor(
+            params=LidarParameters(num_channels=32, h_resolution_rad=np.radians(1.5))
+        )
         self.logger: SimulationLogger = SimulationLogger()
 
         self.collision: bool = False
         self.goal_reached: bool = False
         self.last_command: ControlCommand = ControlCommand()
+        self.last_observation: Optional[LidarObservation] = None
 
         # Initialize vehicle at road start pose
         sx, sy, syaw = self.road.start_pose
         self.vehicle.reset(x=sx, y=sy, yaw=syaw, velocity=0.0, timestamp=0.0)
+        self.last_observation = self.lidar.scan(self.vehicle.state, self.road.obstacles)
 
     def reset(self) -> VehicleState:
         """Resets the simulation to initial conditions."""
@@ -47,7 +56,9 @@ class Simulation:
         self.goal_reached = False
         self.last_command = ControlCommand()
         self.logger.clear()
-        return self.vehicle.reset(x=sx, y=sy, yaw=syaw, velocity=0.0, timestamp=0.0)
+        state = self.vehicle.reset(x=sx, y=sy, yaw=syaw, velocity=0.0, timestamp=0.0)
+        self.last_observation = self.lidar.scan(state, self.road.obstacles)
+        return state
 
     def step(self, command: Optional[ControlCommand] = None) -> Tuple[VehicleState, Dict[str, Any]]:
         """
@@ -63,9 +74,14 @@ class Simulation:
         new_state = self.vehicle.step(cmd, self.clock.dt)
         self.clock.tick()
 
-        # Boundary checks
+        # Perform 3D LiDAR observation sweep
+        self.last_observation = self.lidar.scan(new_state, self.road.obstacles)
+
+        # Boundary and obstacle collision checks
         corners = self.vehicle.get_corners()
-        self.collision = self.road.check_boundary_collision(corners)
+        boundary_coll = self.road.check_boundary_collision(corners)
+        obstacle_coll = self.road.check_obstacle_collision(corners)
+        self.collision = boundary_coll or obstacle_coll
         self.goal_reached = self.road.check_goal_reached(new_state.x, new_state.y)
 
         # Log entry
@@ -81,8 +97,11 @@ class Simulation:
             "step": self.clock.step_count,
             "time": self.clock.time,
             "collision": self.collision,
+            "boundary_collision": boundary_coll,
+            "obstacle_collision": obstacle_coll,
             "goal_reached": self.goal_reached,
             "emergency_stop": cmd.emergency_stop,
+            "lidar_points": int(np.sum(self.last_observation.noisy_scan.valid_mask)) if self.last_observation else 0,
         }
         return new_state, status
 
@@ -136,4 +155,7 @@ class Simulation:
                 "emergency_stop": self.last_command.emergency_stop,
             },
             "road": self.road.to_dict(),
+            "lidar": self.last_observation.noisy_scan.to_dict(max_points=1200) if self.last_observation else None,
+            "lidar_ground_truth_returns": int(np.sum(self.last_observation.ground_truth_scan.valid_mask)) if self.last_observation else 0,
         }
+

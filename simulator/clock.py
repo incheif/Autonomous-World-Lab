@@ -53,3 +53,4 @@ class SimulationClock:
 
     def __repr__(self) -> str:
         return f"SimulationClock(time={self._time:.3f}s, step={self._step}, dt={self._dt:.3f}s)"
+
