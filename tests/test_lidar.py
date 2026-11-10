@@ -146,3 +146,4 @@ def test_lidar_save_and_replay(tmp_path: Path):
     np.testing.assert_allclose(scan.angles_elevation, loaded_scan.angles_elevation)
     np.testing.assert_array_equal(scan.valid_mask, loaded_scan.valid_mask)
     assert scan.timestamp == loaded_scan.timestamp
+

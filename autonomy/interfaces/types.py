@@ -183,3 +183,85 @@ class LidarObservation:
     ground_truth_scan: LidarScan   # Reserved strictly for evaluation & metrics
 
 
+@dataclass
+class DetectedObstacle:
+    """
+    Obstacle identified by the perception subsystem from sensor observations.
+    Coordinates are in world frame (East-North-Up / ISO 8855).
+    """
+    obstacle_id: str
+    x: float             # World X center [m]
+    y: float             # World Y center [m]
+    z: float             # World Z center [m]
+    length: float        # Extent along heading [m]
+    width: float         # Extent lateral to heading [m]
+    height: float        # Vertical height [m]
+    yaw: float           # Heading angle [rad]
+    confidence: float    # Detection confidence [0.0 to 1.0]
+    num_points: int      # Number of point cloud hits in cluster
+    timestamp: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.obstacle_id,
+            "x": round(self.x, 3),
+            "y": round(self.y, 3),
+            "z": round(self.z, 3),
+            "length": round(self.length, 3),
+            "width": round(self.width, 3),
+            "height": round(self.height, 3),
+            "yaw": round(self.yaw, 3),
+            "confidence": round(self.confidence, 3),
+            "num_points": self.num_points,
+            "timestamp": round(self.timestamp, 3),
+        }
+
+
+@dataclass
+class OccupancyGridMap:
+    """
+    2D local bird's-eye-view occupancy grid and safety-inflated cost map.
+    Grid values: -1 = unknown, 0 = free, 100 = occupied
+    Cost values: 0 = clear, 100 = lethal collision zone
+    """
+    origin_x: float          # World X coordinate of cell [0, 0] [m]
+    origin_y: float          # World Y coordinate of cell [0, 0] [m]
+    resolution: float        # Metres per cell [m]
+    width_cells: int         # Cells along X axis
+    height_cells: int        # Cells along Y axis
+    grid: np.ndarray         # Shape (height_cells, width_cells), int8
+    cost_map: np.ndarray     # Shape (height_cells, width_cells), float32 [0.0 to 100.0]
+    timestamp: float = 0.0
+
+    def world_to_grid(self, wx: float, wy: float) -> Optional[tuple[int, int]]:
+        """Converts world coordinates (wx, wy) to grid coordinates (col, row)."""
+        col = int(np.floor((wx - self.origin_x) / self.resolution))
+        row = int(np.floor((wy - self.origin_y) / self.resolution))
+        if 0 <= col < self.width_cells and 0 <= row < self.height_cells:
+            return (col, row)
+        return None
+
+    def grid_to_world(self, col: int, row: int) -> tuple[float, float]:
+        """Converts grid coordinates (col, row) to world coordinates (wx, wy) at cell center."""
+        wx = self.origin_x + (col + 0.5) * self.resolution
+        wy = self.origin_y + (row + 0.5) * self.resolution
+        return (wx, wy)
+
+    def to_dict(self, downsample: int = 2) -> Dict[str, Any]:
+        """
+        Serialize metadata and downsampled cost map for telemetry HUD.
+        """
+        ds_cost = self.cost_map[::downsample, ::downsample]
+        return {
+            "origin_x": round(self.origin_x, 2),
+            "origin_y": round(self.origin_y, 2),
+            "resolution": round(self.resolution * downsample, 3),
+            "width": int(ds_cost.shape[1]),
+            "height": int(ds_cost.shape[0]),
+            "timestamp": round(self.timestamp, 3),
+            # Flatten downsampled cost array as byte/int list (0-100)
+            "costs": np.clip(np.round(ds_cost), 0, 100).astype(int).tolist(),
+        }
+
+
+

@@ -7,7 +7,9 @@ and state logging in headless or interactive viewer modes.
 from typing import Dict, Any, Optional, Tuple, List
 import numpy as np
 
-from autonomy.interfaces.types import VehicleState, ControlCommand, LidarObservation
+from autonomy.interfaces.types import VehicleState, ControlCommand, LidarObservation, DetectedObstacle, OccupancyGridMap
+from autonomy.perception import PerceptionPipeline, PerceptionResult
+from autonomy.mapping import OccupancyGrid
 from simulator.clock import SimulationClock
 from simulator.vehicle.kinematic_bicycle import KinematicBicycleModel, VehicleParameters
 from simulator.world.road import RoadMap
@@ -27,6 +29,8 @@ class Simulation:
         road: Optional[RoadMap] = None,
         vehicle_params: Optional[VehicleParameters] = None,
         lidar: Optional[LidarSensor] = None,
+        perception: Optional[PerceptionPipeline] = None,
+        occupancy_grid: Optional[OccupancyGrid] = None,
     ):
         self.clock: SimulationClock = SimulationClock(dt_sec=dt_sec)
         self.road: RoadMap = road or RoadMap(road_type="straight", road_length_m=120.0)
@@ -36,17 +40,22 @@ class Simulation:
         self.lidar: LidarSensor = lidar or LidarSensor(
             params=LidarParameters(num_channels=32, h_resolution_rad=np.radians(1.5))
         )
+        self.perception: PerceptionPipeline = perception or PerceptionPipeline()
+        self.occupancy_grid: OccupancyGrid = occupancy_grid or OccupancyGrid()
         self.logger: SimulationLogger = SimulationLogger()
 
         self.collision: bool = False
         self.goal_reached: bool = False
         self.last_command: ControlCommand = ControlCommand()
         self.last_observation: Optional[LidarObservation] = None
+        self.last_perception: Optional[PerceptionResult] = None
+        self.last_map: Optional[OccupancyGridMap] = None
 
         # Initialize vehicle at road start pose
         sx, sy, syaw = self.road.start_pose
         self.vehicle.reset(x=sx, y=sy, yaw=syaw, velocity=0.0, timestamp=0.0)
-        self.last_observation = self.lidar.scan(self.vehicle.state, self.road.obstacles)
+        self.occupancy_grid.reset(center_x=sx, center_y=sy)
+        self._update_perception_and_mapping()
 
     def reset(self) -> VehicleState:
         """Resets the simulation to initial conditions."""
@@ -57,8 +66,27 @@ class Simulation:
         self.last_command = ControlCommand()
         self.logger.clear()
         state = self.vehicle.reset(x=sx, y=sy, yaw=syaw, velocity=0.0, timestamp=0.0)
-        self.last_observation = self.lidar.scan(state, self.road.obstacles)
+        self.occupancy_grid.reset(center_x=sx, center_y=sy)
+        self._update_perception_and_mapping()
         return state
+
+    def _update_perception_and_mapping(self):
+        """
+        Runs perception and mapping pipelines on the latest sensor sweep.
+        Perception only ingests noisy_scan (NO ground truth access).
+        """
+        self.last_observation = self.lidar.scan(self.vehicle.state, self.road.obstacles)
+        self.last_perception = self.perception.process(
+            self.last_observation.noisy_scan,
+            self.vehicle.state,
+        )
+        self.occupancy_grid.update_from_scan(
+            self.vehicle.state,
+            self.last_perception.obstacle_points,
+            self.last_perception.ground_points,
+        )
+        self.occupancy_grid.update_from_detected_obstacles(self.last_perception.detected_obstacles)
+        self.last_map = self.occupancy_grid.get_map_snapshot(timestamp=self.clock.time)
 
     def step(self, command: Optional[ControlCommand] = None) -> Tuple[VehicleState, Dict[str, Any]]:
         """
@@ -74,8 +102,8 @@ class Simulation:
         new_state = self.vehicle.step(cmd, self.clock.dt)
         self.clock.tick()
 
-        # Perform 3D LiDAR observation sweep
-        self.last_observation = self.lidar.scan(new_state, self.road.obstacles)
+        # Update perception and mapping pipelines with new sensor observation
+        self._update_perception_and_mapping()
 
         # Boundary and obstacle collision checks
         corners = self.vehicle.get_corners()
@@ -102,6 +130,7 @@ class Simulation:
             "goal_reached": self.goal_reached,
             "emergency_stop": cmd.emergency_stop,
             "lidar_points": int(np.sum(self.last_observation.noisy_scan.valid_mask)) if self.last_observation else 0,
+            "detected_obstacles_count": len(self.last_perception.detected_obstacles) if self.last_perception else 0,
         }
         return new_state, status
 
@@ -153,9 +182,12 @@ class Simulation:
                 "collision": self.collision,
                 "goal_reached": self.goal_reached,
                 "emergency_stop": self.last_command.emergency_stop,
+                "detected_obstacles_count": len(self.last_perception.detected_obstacles) if self.last_perception else 0,
             },
             "road": self.road.to_dict(),
             "lidar": self.last_observation.noisy_scan.to_dict(max_points=1200) if self.last_observation else None,
             "lidar_ground_truth_returns": int(np.sum(self.last_observation.ground_truth_scan.valid_mask)) if self.last_observation else 0,
+            "detected_obstacles": [obs.to_dict() for obs in self.last_perception.detected_obstacles] if self.last_perception else [],
+            "cost_map": self.last_map.to_dict(downsample=3) if self.last_map else None,
         }
 

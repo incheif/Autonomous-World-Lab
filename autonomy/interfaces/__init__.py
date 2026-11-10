@@ -10,6 +10,8 @@ from .types import (
     Obstacle,
     LidarScan,
     LidarObservation,
+    DetectedObstacle,
+    OccupancyGridMap,
 )
 
 __all__ = [
@@ -20,5 +22,7 @@ __all__ = [
     "Obstacle",
     "LidarScan",
     "LidarObservation",
+    "DetectedObstacle",
+    "OccupancyGridMap",
 ]
 

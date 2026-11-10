@@ -19,7 +19,7 @@
       <div class="logo-mark">⚡</div>
       <div class="brand-text">
         <span class="title">AUTONOMOUS-WORLD-LAB</span>
-        <span class="subtitle">Idea 4 · Phase 1 Kinematic Simulation</span>
+        <span class="subtitle">Idea 4 · Phase 3 Perception & Cost Mapping</span>
       </div>
     </div>
     <div class="header-status">
@@ -85,6 +85,24 @@
 
     <div class="panel-divider"></div>
 
+    <div class="panel-header">PERCEPTION & MAPPING</div>
+    <div class="metric-row">
+      <span class="label">Detected Obstacles</span>
+      <span class="value" id="val-detected-obs">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="label">3D Bounding Boxes</span>
+      <span class="value">
+        <button id="btn-toggle-boxes" class="btn btn-sm active" style="padding: 2px 8px; font-size: 11px;">VISIBLE</button>
+      </span>
+    </div>
+    <div class="metric-row">
+      <span class="label">Safety Buffer</span>
+      <span class="value">0.50m margin</span>
+    </div>
+
+    <div class="panel-divider"></div>
+
     <div class="panel-header">SIMULATION CLOCK</div>
     <div class="metric-row">
       <span class="label">Sim Time</span>
@@ -117,6 +135,16 @@
       <button class="btn btn-road active" data-road="s_curve">S-Curve</button>
       <button class="btn btn-road" data-road="curve">Gentle Curve</button>
       <button class="btn btn-road" data-road="straight">Straight</button>
+    </div>
+
+    <div class="panel-divider"></div>
+
+    <div class="minimap-container">
+      <div class="minimap-header">
+        <span>LOCAL COST MAP (BEV)</span>
+        <span id="minimap-res">0.75m / cell</span>
+      </div>
+      <canvas id="minimap-canvas" width="220" height="180"></canvas>
     </div>
 
     <div class="panel-divider"></div>

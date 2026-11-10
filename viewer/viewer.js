@@ -43,6 +43,12 @@ class SimulationViewer {
     this.maxLidarPoints = 2000;
     this.lidarPointsMesh = null;
 
+    // Perception & Mapping
+    this.showBoundingBoxes = true;
+    this.detectedBoxGroup = null;
+    this.minimapCanvas = document.getElementById("minimap-canvas");
+    this.minimapCtx = this.minimapCanvas ? this.minimapCanvas.getContext("2d") : null;
+
     this.initThree();
     this.initControls();
     this.initWebSocket();
@@ -108,6 +114,9 @@ class SimulationViewer {
 
     this.obstacleGroup = new THREE.Group();
     this.scene.add(this.obstacleGroup);
+
+    this.detectedBoxGroup = new THREE.Group();
+    this.scene.add(this.detectedBoxGroup);
 
     this.vehicleGroup = new THREE.Group();
     this.scene.add(this.vehicleGroup);
@@ -458,6 +467,127 @@ class SimulationViewer {
     this.lidarPointsMesh.geometry.attributes.color.needsUpdate = true;
   }
 
+  updateDetectedObstacles(obstacles) {
+    if (!this.detectedBoxGroup) return;
+
+    // Clear existing boxes
+    while (this.detectedBoxGroup.children.length > 0) {
+      const child = this.detectedBoxGroup.children[0];
+      this.detectedBoxGroup.remove(child);
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    }
+
+    if (!this.showBoundingBoxes || !obstacles || obstacles.length === 0) return;
+
+    for (const obs of obstacles) {
+      // 3D Oriented Bounding Box geometry
+      const boxGeo = new THREE.BoxGeometry(obs.length, obs.height, obs.width);
+      const wireGeo = new THREE.EdgesGeometry(boxGeo);
+      const wireMat = new THREE.LineBasicMaterial({
+        color: 0x06b6d4, // Cyan glow
+        linewidth: 2,
+      });
+      const boxMesh = new THREE.LineSegments(wireGeo, wireMat);
+
+      // Semi-transparent fill
+      const fillMat = new THREE.MeshBasicMaterial({
+        color: 0x06b6d4,
+        transparent: true,
+        opacity: 0.12,
+      });
+      const fillMesh = new THREE.Mesh(boxGeo, fillMat);
+      boxMesh.add(fillMesh);
+
+      // Orientation tick mark along heading
+      const arrowLen = Math.max(obs.length * 0.6, 1.0);
+      const arrowGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(arrowLen, 0, 0),
+      ]);
+      const arrowMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 });
+      const arrowMesh = new THREE.Line(arrowGeo, arrowMat);
+      boxMesh.add(arrowMesh);
+
+      // Position in Three.js coordinates
+      const threeP = simToThree(obs.x, obs.y, obs.z);
+      boxMesh.position.copy(threeP);
+      boxMesh.rotation.y = obs.yaw;
+
+      this.detectedBoxGroup.add(boxMesh);
+    }
+  }
+
+  renderMinimap(s) {
+    if (!this.minimapCtx || !s.cost_map || !s.cost_map.costs) return;
+
+    const ctx = this.minimapCtx;
+    const cm = s.cost_map;
+    const v = s.vehicle;
+    const width = this.minimapCanvas.width;
+    const height = this.minimapCanvas.height;
+
+    ctx.clearRect(0, 0, width, height);
+
+    // Draw cost map cells
+    const rows = cm.height;
+    const cols = cm.width;
+    const cellW = width / cols;
+    const cellH = height / rows;
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cost = cm.costs[r * cols + c];
+        if (cost <= 0) {
+          // Free space
+          ctx.fillStyle = "#040d1a";
+        } else if (cost >= 90) {
+          // Lethal obstacle
+          ctx.fillStyle = "#ef4444";
+        } else if (cost >= 50) {
+          // High cost buffer
+          ctx.fillStyle = "#f59e0b";
+        } else if (cost >= 20) {
+          // Moderate safety buffer
+          ctx.fillStyle = "#0284c7";
+        } else {
+          // Low safety buffer
+          ctx.fillStyle = "#1e293b";
+        }
+        // Invert Y for canvas coordinate system (row 0 is bottom-left in world)
+        ctx.fillRect(c * cellW, height - (r + 1) * cellH, cellW + 0.5, cellH + 0.5);
+      }
+    }
+
+    // Draw ego vehicle icon at world position
+    const vCol = ((v.x - cm.origin_x) / (cols * cm.resolution)) * width;
+    const vRow = height - (((v.y - cm.origin_y) / (rows * cm.resolution)) * height);
+
+    ctx.save();
+    ctx.translate(vCol, vRow);
+    ctx.rotate(-v.yaw); // Counter-clockwise to canvas screen angle
+
+    // Vehicle footprint rectangle
+    ctx.fillStyle = "#22c55e";
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.5;
+    const fLen = (4.5 / cm.resolution) * cellW * 0.5;
+    const fWid = (1.8 / cm.resolution) * cellH * 0.5;
+    ctx.fillRect(-fLen * 0.3, -fWid * 0.5, fLen, fWid);
+    ctx.strokeRect(-fLen * 0.3, -fWid * 0.5, fLen, fWid);
+
+    // Heading nose indicator
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.moveTo(fLen * 0.7, 0);
+    ctx.lineTo(fLen * 0.3, -fWid * 0.4);
+    ctx.lineTo(fLen * 0.3, fWid * 0.4);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  }
+
   initWebSocket() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -564,6 +694,12 @@ class SimulationViewer {
     // Update 3D LiDAR point cloud
     this.updateLidarPointCloud(s);
 
+    // Update 3D detected obstacle bounding boxes
+    this.updateDetectedObstacles(s.detected_obstacles);
+
+    // Render 2D Local Cost Map Mini-Map
+    this.renderMinimap(s);
+
     // Update camera rig
     this.updateCamera(v);
 
@@ -631,6 +767,15 @@ class SimulationViewer {
       lidarHitsEl.innerHTML = `${lidarHits} <small>pts</small>`;
     }
 
+    // Perception stats
+    const detObsEl = document.getElementById("val-detected-obs");
+    if (detObsEl) {
+      const count = s.status.detected_obstacles_count !== undefined
+        ? s.status.detected_obstacles_count
+        : (s.detected_obstacles ? s.detected_obstacles.length : 0);
+      detObsEl.innerHTML = `${count} <small>objects</small>`;
+    }
+
     // Badges
     const collPill = document.getElementById("collision-pill");
     const goalPill = document.getElementById("goal-pill");
@@ -673,6 +818,29 @@ class SimulationViewer {
           toggleLidarBtn.textContent = "HIDDEN";
           if (this.lidarPointsMesh) {
             this.lidarPointsMesh.geometry.setDrawRange(0, 0);
+          }
+        }
+      });
+    }
+
+    // Bounding Box toggle button
+    const toggleBoxBtn = document.getElementById("btn-toggle-boxes");
+    if (toggleBoxBtn) {
+      toggleBoxBtn.addEventListener("click", () => {
+        this.showBoundingBoxes = !this.showBoundingBoxes;
+        if (this.showBoundingBoxes) {
+          toggleBoxBtn.classList.add("active");
+          toggleBoxBtn.textContent = "VISIBLE";
+        } else {
+          toggleBoxBtn.classList.remove("active");
+          toggleBoxBtn.textContent = "HIDDEN";
+          if (this.detectedBoxGroup) {
+            while (this.detectedBoxGroup.children.length > 0) {
+              const child = this.detectedBoxGroup.children[0];
+              this.detectedBoxGroup.remove(child);
+              if (child.geometry) child.geometry.dispose();
+              if (child.material) child.material.dispose();
+            }
           }
         }
       });

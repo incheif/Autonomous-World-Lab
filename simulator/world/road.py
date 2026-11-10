@@ -38,6 +38,7 @@ class RoadMap:
         lane_width_m: float = 3.75,
         num_lanes: int = 2,
         with_obstacles: bool = True,
+        obstacles: Optional[List[Obstacle]] = None,
     ):
         self.road_type: str = road_type
         self.road_length_m: float = float(road_length_m)
@@ -54,7 +55,10 @@ class RoadMap:
         self.goal_pose: Tuple[float, float, float] = (self.road_length_m - 10.0, 0.0, 0.0)
 
         self._generate_road()
-        if self.with_obstacles:
+        if obstacles is not None:
+            for obs in obstacles:
+                self.add_obstacle(obs)
+        elif self.with_obstacles:
             self._add_default_obstacles()
 
     def _generate_road(self) -> None:

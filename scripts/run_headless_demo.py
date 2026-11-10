@@ -18,7 +18,7 @@ from simulator.world.road import RoadMap
 
 def main():
     print("=" * 70)
-    print(" 🚗 AUTONOMOUS-WORLD-LAB · HEADLESS SIMULATION & LIDAR DEMO (PHASE 2)")
+    print(" 🚗 AUTONOMOUS-WORLD-LAB · HEADLESS SIMULATION, LIDAR & PERCEPTION DEMO (PHASE 3)")
     print("=" * 70)
 
     # 1. Create S-curve road with static obstacle boxes and simulation
@@ -66,11 +66,34 @@ def main():
         sim.lidar.save_scan_npz(noisy, str(out_scan))
         print(f"\nSaved sample scan NPZ: {out_scan}")
 
+    # Inspect Perception and Mapping Subsystems
+    if sim.last_perception:
+        print("\nPerception & Obstacle Detection Results:")
+        print(f"  Obstacle Points Found: {len(sim.last_perception.obstacle_points)}")
+        print(f"  Ground Points Filtered: {len(sim.last_perception.ground_points)}")
+        print(f"  Clusters Formed      : {len(sim.last_perception.clusters)}")
+        print(f"  Detected Obstacles   : {len(sim.last_perception.detected_obstacles)}")
+        for obs in sim.last_perception.detected_obstacles:
+            print(f"    -> [{obs.obstacle_id}] Center: ({obs.x:.2f}, {obs.y:.2f}, {obs.z:.2f})m | "
+                  f"Size: {obs.length:.2f}x{obs.width:.2f}x{obs.height:.2f}m | "
+                  f"Yaw: {np.degrees(obs.yaw):.1f}° | Conf: {obs.confidence*100:.0f}% | Points: {obs.num_points}")
+
+    if sim.last_map:
+        print("\n2D Bird's-Eye-View Cost Map:")
+        print(f"  Grid Size            : {sim.last_map.width_cells} x {sim.last_map.height_cells} cells")
+        print(f"  Resolution           : {sim.last_map.resolution:.2f} m/cell")
+        lethal_count = int(np.sum(sim.last_map.cost_map >= 99.0))
+        buffer_count = int(np.sum((sim.last_map.cost_map > 0.0) & (sim.last_map.cost_map < 99.0)))
+        clear_count = int(np.sum(sim.last_map.cost_map == 0.0))
+        print(f"  Lethal Cells         : {lethal_count}")
+        print(f"  Safety Buffer Cells  : {buffer_count}")
+        print(f"  Clear Cells          : {clear_count}")
+
     # 4. Export CSV log
     out_dir = PROJECT_ROOT / "runs"
     out_csv = out_dir / "headless_demo_trajectory.csv"
     sim.logger.export_csv(out_csv)
-    print(f"Saved trajectory log : {out_csv}")
+    print(f"\nSaved trajectory log : {out_csv}")
     print("=" * 70)
 
 
