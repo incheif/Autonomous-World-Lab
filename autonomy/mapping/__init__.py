@@ -17,3 +17,4 @@ __all__ = [
     "FREE",
     "OCCUPIED",
 ]
+

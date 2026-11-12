@@ -19,10 +19,13 @@
       <div class="logo-mark">⚡</div>
       <div class="brand-text">
         <span class="title">AUTONOMOUS-WORLD-LAB</span>
-        <span class="subtitle">Idea 4 · Phase 3 Perception & Cost Mapping</span>
+        <span class="subtitle">Idea 4 · Phase 4 Autonomous Navigation Baseline</span>
       </div>
     </div>
     <div class="header-status">
+      <div id="planner-pill" class="pill pill-offline">
+        <span id="planner-text">MANUAL MODE</span>
+      </div>
       <div id="connection-pill" class="pill pill-offline">
         <span class="pill-dot"></span>
         <span id="connection-text">CONNECTING...</span>
@@ -103,6 +106,26 @@
 
     <div class="panel-divider"></div>
 
+    <div class="panel-header">AUTONOMOUS NAVIGATION</div>
+    <div class="metric-row">
+      <span class="label">Control Mode</span>
+      <span class="value">
+        <button id="btn-autopilot" class="btn btn-sm" style="padding: 2px 10px; font-size: 11px;">AUTOPILOT: OFF</button>
+      </span>
+    </div>
+    <div class="metric-row">
+      <span class="label">Planner State</span>
+      <span class="value" id="val-planner-status">MANUAL</span>
+    </div>
+    <div class="metric-row">
+      <span class="label">Planned Paths</span>
+      <span class="value">
+        <button id="btn-toggle-paths" class="btn btn-sm active" style="padding: 2px 8px; font-size: 11px;">VISIBLE</button>
+      </span>
+    </div>
+
+    <div class="panel-divider"></div>
+
     <div class="panel-header">SIMULATION CLOCK</div>
     <div class="metric-row">
       <span class="label">Sim Time</span>
@@ -130,7 +153,18 @@
 
     <div class="panel-divider"></div>
 
-    <div class="panel-header">ROAD SCENARIO</div>
+    <div class="panel-header">TEST SCENARIOS</div>
+    <div class="btn-group" style="grid-template-columns: 1fr 1fr;">
+      <button class="btn btn-scenario" data-scenario="straight_clear">Clear Straight</button>
+      <button class="btn btn-scenario" data-scenario="straight_static_obstacle">1 Obstacle</button>
+      <button class="btn btn-scenario" data-scenario="straight_double_obstacle">2 Obstacles</button>
+      <button class="btn btn-scenario" data-scenario="s_curve_avoidance">S-Curve Avoid</button>
+      <button class="btn btn-scenario" data-scenario="blocked_road" style="grid-column: span 2;">Blocked Road (E-Stop)</button>
+    </div>
+
+    <div class="panel-divider"></div>
+
+    <div class="panel-header">ROAD GEOMETRY</div>
     <div class="btn-group">
       <button class="btn btn-road active" data-road="s_curve">S-Curve</button>
       <button class="btn btn-road" data-road="curve">Gentle Curve</button>

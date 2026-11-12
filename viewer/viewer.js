@@ -49,6 +49,14 @@ class SimulationViewer {
     this.minimapCanvas = document.getElementById("minimap-canvas");
     this.minimapCtx = this.minimapCanvas ? this.minimapCanvas.getContext("2d") : null;
 
+    // Navigation & Planning (Phase 4)
+    this.autopilot = false;
+    this.showPlannedPaths = true;
+    this.roadSignature = null;
+    this.globalPathLine = null;
+    this.localPathLine = null;
+    this.lookaheadMarker = null;
+
     this.initThree();
     this.initControls();
     this.initWebSocket();
@@ -124,6 +132,30 @@ class SimulationViewer {
     this.buildVehicleMesh();
     this.initTrail();
     this.initLidarPointCloud();
+    this.initPlanningVisuals();
+  }
+
+  initPlanningVisuals() {
+    // Global A* Route (Indigo / Sky Ribbon)
+    const gGeo = new THREE.BufferGeometry();
+    const gMat = new THREE.LineBasicMaterial({ color: 0x6366f1, linewidth: 2, transparent: true, opacity: 0.7 });
+    this.globalPathLine = new THREE.Line(gGeo, gMat);
+    this.globalPathLine.frustumCulled = false;
+    this.scene.add(this.globalPathLine);
+
+    // Local Avoidance Trajectory (Bright Emerald Green)
+    const lGeo = new THREE.BufferGeometry();
+    const lMat = new THREE.LineBasicMaterial({ color: 0x22c55e, linewidth: 3 });
+    this.localPathLine = new THREE.Line(lGeo, lMat);
+    this.localPathLine.frustumCulled = false;
+    this.scene.add(this.localPathLine);
+
+    // Pure Pursuit Lookahead Marker (Magenta Sphere)
+    const targetGeo = new THREE.SphereGeometry(0.32, 16, 16);
+    const targetMat = new THREE.MeshBasicMaterial({ color: 0xec4899 });
+    this.lookaheadMarker = new THREE.Mesh(targetGeo, targetMat);
+    this.lookaheadMarker.visible = false;
+    this.scene.add(this.lookaheadMarker);
   }
 
   initLidarPointCloud() {
@@ -633,6 +665,7 @@ class SimulationViewer {
 
   sendControlCommand() {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (this.autopilot && !this.keys.space) return;
 
     // Process keys to actuator targets
     let targetAccel = 0.0;
@@ -660,12 +693,55 @@ class SimulationViewer {
     this.ws.send(JSON.stringify(payload));
   }
 
+  updatePlanningVisuals(planning) {
+    if (!this.globalPathLine || !this.localPathLine || !this.lookaheadMarker) return;
+
+    if (!this.showPlannedPaths || !planning) {
+      this.globalPathLine.visible = false;
+      this.localPathLine.visible = false;
+      this.lookaheadMarker.visible = false;
+      return;
+    }
+
+    // Global Route
+    if (planning.global_path && planning.global_path.length > 1) {
+      const gPts = planning.global_path.map((p) => simToThree(p[0], p[1], 0.08));
+      this.globalPathLine.geometry.setFromPoints(gPts);
+      this.globalPathLine.visible = true;
+    } else {
+      this.globalPathLine.visible = false;
+    }
+
+    // Local Avoidance Trajectory
+    if (planning.local_path && planning.local_path.length > 1) {
+      const lPts = planning.local_path.map((p) => simToThree(p[0], p[1], 0.14));
+      this.localPathLine.geometry.setFromPoints(lPts);
+      this.localPathLine.visible = true;
+    } else {
+      this.localPathLine.visible = false;
+    }
+
+    // Lookahead Target Marker
+    if (planning.lookahead_point) {
+      const tp = simToThree(planning.lookahead_point[0], planning.lookahead_point[1], 0.25);
+      this.lookaheadMarker.position.copy(tp);
+      this.lookaheadMarker.visible = true;
+    } else {
+      this.lookaheadMarker.visible = false;
+    }
+  }
+
   handleSnapshot(s) {
     this.lastSnapshot = s;
 
-    // Rebuild road if not built or changed
-    if (!this.currentRoadType || this.currentRoadType !== s.road.road_type) {
+    // Rebuild road whenever type, length, or obstacle layout changes
+    const obsKey = s.road.obstacles ? s.road.obstacles.map((o) => `${o.id}:${o.x}:${o.y}`).join("|") : "";
+    const sig = `${s.road.road_type}_${s.road.road_length_m}_${obsKey}`;
+    if (!this.roadSignature || this.roadSignature !== sig) {
+      this.roadSignature = sig;
       this.currentRoadType = s.road.road_type;
+      this.trailPoints = [];
+      if (this.trailLine) this.trailLine.geometry.setDrawRange(0, 0);
       this.rebuildRoad(s.road);
     }
 
@@ -696,6 +772,9 @@ class SimulationViewer {
 
     // Update 3D detected obstacle bounding boxes
     this.updateDetectedObstacles(s.detected_obstacles);
+
+    // Update Planning & Pure Pursuit Paths
+    this.updatePlanningVisuals(s.planning);
 
     // Render 2D Local Cost Map Mini-Map
     this.renderMinimap(s);
@@ -776,6 +855,43 @@ class SimulationViewer {
       detObsEl.innerHTML = `${count} <small>objects</small>`;
     }
 
+    // Autopilot & Planner state
+    this.autopilot = Boolean(s.autopilot);
+    const autopilotBtn = document.getElementById("btn-autopilot");
+    if (autopilotBtn) {
+      if (this.autopilot) {
+        autopilotBtn.classList.add("active");
+        autopilotBtn.textContent = "AUTOPILOT: ON";
+      } else {
+        autopilotBtn.classList.remove("active");
+        autopilotBtn.textContent = "AUTOPILOT: OFF";
+      }
+    }
+
+    const plannerStateEl = document.getElementById("val-planner-status");
+    const plannerState = s.status.planner_status || "MANUAL";
+    if (plannerStateEl) {
+      plannerStateEl.textContent = plannerState;
+    }
+
+    const plannerPill = document.getElementById("planner-pill");
+    const plannerText = document.getElementById("planner-text");
+    if (plannerPill && plannerText) {
+      if (!this.autopilot) {
+        plannerPill.className = "pill pill-offline";
+        plannerText.textContent = "MANUAL MODE";
+      } else if (plannerState === "EMERGENCY_STOP" || s.status.failure_reason) {
+        plannerPill.className = "pill pill-danger";
+        plannerText.textContent = `E-STOP (${s.status.failure_reason || "BLOCKED"})`;
+      } else if (plannerState === "GOAL_REACHED" || s.status.goal_reached) {
+        plannerPill.className = "pill pill-success";
+        plannerText.textContent = "AUTOPILOT · GOAL";
+      } else {
+        plannerPill.className = "pill pill-online";
+        plannerText.textContent = `AUTOPILOT · ${plannerState}`;
+      }
+    }
+
     // Badges
     const collPill = document.getElementById("collision-pill");
     const goalPill = document.getElementById("goal-pill");
@@ -798,12 +914,50 @@ class SimulationViewer {
     // Road selector buttons
     document.querySelectorAll(".btn-road").forEach((btn) => {
       btn.addEventListener("click", (e) => {
-        document.querySelectorAll(".btn-road").forEach((b) => b.classList.remove("active"));
+        document.querySelectorAll(".btn-road, .btn-scenario").forEach((b) => b.classList.remove("active"));
         e.target.classList.add("active");
         const roadType = e.target.dataset.road;
         this.resetSimulation(roadType);
       });
     });
+
+    // Scenario selector buttons
+    document.querySelectorAll(".btn-scenario").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        document.querySelectorAll(".btn-road, .btn-scenario").forEach((b) => b.classList.remove("active"));
+        e.target.classList.add("active");
+        const scenarioId = e.target.dataset.scenario;
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ action: "load_scenario", scenario_id: scenarioId }));
+        }
+      });
+    });
+
+    // Autopilot toggle button
+    const autopilotBtn = document.getElementById("btn-autopilot");
+    if (autopilotBtn) {
+      autopilotBtn.addEventListener("click", () => {
+        const nextState = !this.autopilot;
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({ action: "set_autopilot", enabled: nextState }));
+        }
+      });
+    }
+
+    // Planned Paths toggle button
+    const togglePathsBtn = document.getElementById("btn-toggle-paths");
+    if (togglePathsBtn) {
+      togglePathsBtn.addEventListener("click", () => {
+        this.showPlannedPaths = !this.showPlannedPaths;
+        if (this.showPlannedPaths) {
+          togglePathsBtn.classList.add("active");
+          togglePathsBtn.textContent = "VISIBLE";
+        } else {
+          togglePathsBtn.classList.remove("active");
+          togglePathsBtn.textContent = "HIDDEN";
+        }
+      });
+    }
 
     // LiDAR toggle button
     const toggleLidarBtn = document.getElementById("btn-toggle-lidar");

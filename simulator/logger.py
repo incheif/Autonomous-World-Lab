@@ -29,6 +29,7 @@ class LogEntry:
     collision: bool
     goal_reached: bool
     emergency_stop: bool
+    failure_reason: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -50,6 +51,7 @@ class SimulationLogger:
         command: ControlCommand,
         collision: bool = False,
         goal_reached: bool = False,
+        failure_reason: Optional[str] = None,
     ) -> LogEntry:
         """Appends one simulation step log entry."""
         entry = LogEntry(
@@ -68,6 +70,7 @@ class SimulationLogger:
             collision=collision,
             goal_reached=goal_reached,
             emergency_stop=command.emergency_stop,
+            failure_reason=failure_reason,
         )
         if len(self.entries) < self.max_buffer_size:
             self.entries.append(entry)
@@ -107,6 +110,8 @@ class SimulationLogger:
         speeds = [e.velocity for e in self.entries]
         collisions = any(e.collision for e in self.entries)
         goal = any(e.goal_reached for e in self.entries)
+        last_failure = self.entries[-1].failure_reason
+        estop_steps = sum(1 for e in self.entries if e.emergency_stop)
 
         return {
             "total_steps": len(self.entries),
@@ -117,4 +122,6 @@ class SimulationLogger:
             "final_y": self.entries[-1].y,
             "collision_occurred": collisions,
             "goal_reached": goal,
+            "emergency_stop_steps": estop_steps,
+            "failure_reason": last_failure if not (goal and not collisions) else None,
         }

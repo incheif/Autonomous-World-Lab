@@ -43,7 +43,7 @@ flowchart TD
 
 ---
 
-## ✨ Features (Phases 1 & 2)
+## ✨ Features (Phases 1–4)
 
 1. **Deterministic Headless Core**:
    - Fixed simulation timestep ($\Delta t = 0.02\text{ s} = 50\text{ Hz}$).
@@ -63,13 +63,17 @@ flowchart TD
    - Dynamic road generation (Straight, Gentle Curve, S-Curve) with customizable lane width and boundaries.
    - Static 3D obstacle boxes (parked vehicles, construction barriers) with 3D hazard meshes.
    - Continuous 4-corner bounding box collision checks detecting off-road and obstacle collision events.
-5. **Three.js 60 FPS 3D WebGL Studio**:
-   - Volumetric 3D LiDAR point cloud rendered with elevation-based Turbo color gradient (purple ground, cyan obstacles, gold car tops).
-   - Metallic chassis, glass cabin, front headlights, rear brake lights.
-   - **Front wheels visibly turn** to match `steering_angle` $\delta$.
-   - Wheels dynamically rotate with longitudinal vehicle velocity $v$.
-   - Interactive camera rigs: **Chase Cam**, **Cockpit Cam**, **Top-Down Drone Cam**, and **Free Orbit Cam**.
-   - Real-time keyboard drive bridge (`W/A/S/D`, `Arrows`, `Space` for E-Stop, `R` to Reset).
+5. **Perception & Mapping (Phase 3)**:
+   - Ground plane filtering using roof mount geometry and elevation thresholding (with optional RANSAC plane fitting).
+   - Euclidean spatial clustering (`cKDTree`) and L-shape edge-closeness Oriented Bounding Box (OBB) estimation.
+   - 2D rolling Bird's-Eye-View Occupancy Grid (`FREE`, `OCCUPIED`, `UNKNOWN`) with exact Euclidean distance transform inflation for the $4.50\text{ m} \times 1.80\text{ m}$ vehicle footprint plus safety margin.
+6. **Autonomous Navigation Baseline (Phase 4)**:
+   - **Global A\* Route Planner** across the drivable road corridor.
+   - **Local Obstacle Avoidance Planner** evaluating cosine-blended lateral shift trajectories against detected obstacle OBBs and the BEV cost map.
+   - **Pure Pursuit Path Tracking** + proportional longitudinal speed control + fail-safe emergency stop (`NO_SAFE_ROUTE`).
+   - Standardized deterministic test scenarios (`straight_clear`, `straight_static_obstacle`, `straight_double_obstacle`, `s_curve_avoidance`, `blocked_road`).
+7. **Three.js 60 FPS 3D WebGL Studio**:
+   - Volumetric 3D LiDAR point cloud, cyan detected OBB wireframes, 2D BEV Cost Map Mini-Map HUD, Global/Local planned trajectory ribbons, Pure Pursuit lookahead marker, and one-click **Autopilot** / **Scenario** switching.
 
 ---
 
@@ -90,14 +94,14 @@ pip install -r requirements.txt
 ```bash
 pytest
 ```
-*Executes all 16 deterministic tests verifying vehicle kinematics, turning radius $R = L / \tan(\delta)$, steering limits, road boundaries, and replay fidelity.*
+*Executes deterministic tests verifying vehicle kinematics, turning radius $R = L / \tan(\delta)$, LiDAR raycasting & noise, perception/mapping, and closed-loop autonomous navigation.*
 
-### 3. Run Headless Demo Script
+### 3. Run Headless Demo & Navigation Scenarios
 
 ```bash
-python scripts/run_headless_demo.py
+python scripts/run_autonomous_scenarios.py
 ```
-*Executes 250 simulation steps headlessly at maximum speed and exports the trajectory to `runs/headless_demo_trajectory.csv`.*
+*Executes all 5 deterministic closed-loop autonomous driving scenarios headlessly and exports CSV logs to `runs/`.*
 
 ### 4. Launch the 3D Interactive WebGL Studio
 
@@ -126,8 +130,8 @@ python run_viewer.py
 - [x] **Phase 0**: Repository audit, licenses, third-party notices, and decoupled architecture.
 - [x] **Phase 1**: Minimal 3D road, kinematic vehicle dynamics, fixed-step clock, manual driving, headless tests, and Three.js viewer.
 - [x] **Phase 2**: 32-Beam LiDAR simulation (configurable V-FoV, horizontal resolution, range noise, beam dropout, raycasting, and Three.js point cloud returns).
-- [ ] **Phase 3**: Perception & Mapping (Euclidean point clustering, oriented bounding box estimation, 2D occupancy grid, and vehicle footprint inflation).
-- [ ] **Phase 4**: Autonomous Navigation Baseline (Global A*, local obstacle avoidance, Pure Pursuit path tracking, and emergency stop).
+- [x] **Phase 3**: Perception & Mapping (Euclidean point clustering, oriented bounding box estimation, 2D occupancy grid, and vehicle footprint inflation).
+- [x] **Phase 4**: Autonomous Navigation Baseline (Global A*, local obstacle avoidance, Pure Pursuit path tracking, and emergency stop).
 - [ ] **Phase 5**: Benchmark Suite & Modular Algorithms (Controller & planner face-offs across standardized test tracks).
 - [ ] **Phase 6**: Ground Truth vs. Belief State (Dual-screen visualizer, EKF covariance ellipses, sensor dropouts).
 - [ ] **Phase 7**: Predictive World Models & Learned Dynamics.

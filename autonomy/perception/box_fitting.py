@@ -6,7 +6,6 @@ Calculates minimum-area oriented bounding rectangles and vertical extents.
 from dataclasses import dataclass
 from typing import List, Optional
 import numpy as np
-from scipy.spatial import ConvexHull, QhullError
 from autonomy.interfaces.types import DetectedObstacle
 
 
@@ -77,8 +76,8 @@ class BoxFitter:
         # Horizontal 2D points (XY)
         pts_2d = cluster[:, :2]
 
-        # Find best orientation via Convex Hull or PCA fallback
-        center_x, center_y, length, width, yaw = self._fit_min_area_rectangle(pts_2d)
+        # Find best orientation via L-shape edge closeness fitting
+        center_x, center_y, length, width, yaw = self._fit_l_shape_rectangle(pts_2d)
 
         # Sanity check dimensions
         if length > self.config.max_dimension or width > self.config.max_dimension:
@@ -104,19 +103,13 @@ class BoxFitter:
             timestamp=timestamp,
         )
 
-    def _fit_min_area_rectangle(self, pts_2d: np.ndarray) -> tuple[float, float, float, float, float]:
+    def _fit_l_shape_rectangle(self, pts_2d: np.ndarray) -> tuple[float, float, float, float, float]:
         """
-        Fits minimum area rectangle to 2D points.
+        Fits an oriented bounding rectangle using L-shape edge closeness optimization.
+        Avoids diagonal corner inflation when LiDAR views only two faces of an obstacle.
         Returns: (center_x, center_y, length, width, yaw) where length >= width.
         """
-        try:
-            hull = ConvexHull(pts_2d)
-            hull_points = pts_2d[hull.vertices]
-        except QhullError:
-            hull_points = pts_2d
-
-        if len(hull_points) < 3:
-            # Fallback to axis-aligned bounding box
+        if len(pts_2d) < 3:
             min_xy = np.min(pts_2d, axis=0)
             max_xy = np.max(pts_2d, axis=0)
             center = (min_xy + max_xy) / 2.0
@@ -127,44 +120,52 @@ class BoxFitter:
             else:
                 return float(center[0]), float(center[1]), float(dim_y), float(dim_x), np.pi / 2.0
 
-        # Test edge orientations from the convex hull
-        min_area = float("inf")
-        best_rect = (0.0, 0.0, 1.0, 1.0, 0.0)
+        # Evaluate 45 candidate angles in [0, pi/2) (2-degree angular step)
+        angles = np.linspace(0.0, np.pi / 2.0, 45, endpoint=False)
+        cos_a = np.cos(angles)  # (A,)
+        sin_a = np.sin(angles)  # (A,)
 
-        n_verts = len(hull_points)
-        for i in range(n_verts):
-            p1 = hull_points[i]
-            p2 = hull_points[(i + 1) % n_verts]
-            edge = p2 - p1
-            edge_norm = np.linalg.norm(edge)
-            if edge_norm < 1e-5:
-                continue
+        # Project points onto all candidate axes simultaneously: shape (A, N)
+        px = pts_2d[:, 0][np.newaxis, :]  # (1, N)
+        py = pts_2d[:, 1][np.newaxis, :]  # (1, N)
 
-            # Unit vectors along and perpendicular to edge
-            u = edge / edge_norm
-            v = np.array([-u[1], u[0]])
+        c1 = cos_a[:, np.newaxis] * px + sin_a[:, np.newaxis] * py
+        c2 = -sin_a[:, np.newaxis] * px + cos_a[:, np.newaxis] * py
 
-            # Project all hull points onto u and v
-            proj_u = np.dot(hull_points, u)
-            proj_v = np.dot(hull_points, v)
+        c1_min = np.min(c1, axis=1, keepdims=True)
+        c1_max = np.max(c1, axis=1, keepdims=True)
+        c2_min = np.min(c2, axis=1, keepdims=True)
+        c2_max = np.max(c2, axis=1, keepdims=True)
 
-            min_u, max_u = np.min(proj_u), np.max(proj_u)
-            min_v, max_v = np.min(proj_v), np.max(proj_v)
+        # Closeness criterion: distance of each point to closest rectangle edge
+        d1 = np.minimum(c1 - c1_min, c1_max - c1)
+        d2 = np.minimum(c2 - c2_min, c2_max - c2)
+        closeness_err = np.mean(np.minimum(d1, d2) ** 2, axis=1)
 
-            extent_u = max_u - min_u
-            extent_v = max_v - min_v
-            area = extent_u * extent_v
+        ext1 = (c1_max - c1_min).ravel()
+        ext2 = (c2_max - c2_min).ravel()
+        area_tiebreak = 1e-4 * (ext1 * ext2)
 
-            if area < min_area:
-                min_area = area
-                center_u = (min_u + max_u) / 2.0
-                center_v = (min_v + max_v) / 2.0
-                center_pt = center_u * u + center_v * v
+        best_idx = int(np.argmin(closeness_err + area_tiebreak))
+        theta = float(angles[best_idx])
 
-                heading = float(np.arctan2(u[1], u[0]))
-                if extent_u >= extent_v:
-                    best_rect = (float(center_pt[0]), float(center_pt[1]), float(extent_u), float(extent_v), heading)
-                else:
-                    best_rect = (float(center_pt[0]), float(center_pt[1]), float(extent_v), float(extent_u), float((heading + np.pi / 2.0) % np.pi))
+        u = np.array([float(np.cos(theta)), float(np.sin(theta))])
+        v = np.array([-u[1], u[0]])
 
-        return best_rect
+        min_u = float(c1_min[best_idx, 0])
+        max_u = float(c1_max[best_idx, 0])
+        min_v = float(c2_min[best_idx, 0])
+        max_v = float(c2_max[best_idx, 0])
+
+        extent_u = max_u - min_u
+        extent_v = max_v - min_v
+
+        center_u = (min_u + max_u) / 2.0
+        center_v = (min_v + max_v) / 2.0
+        center_pt = center_u * u + center_v * v
+
+        if extent_u >= extent_v:
+            return float(center_pt[0]), float(center_pt[1]), float(extent_u), float(extent_v), theta
+        else:
+            return float(center_pt[0]), float(center_pt[1]), float(extent_v), float(extent_u), float((theta + np.pi / 2.0) % np.pi)
+

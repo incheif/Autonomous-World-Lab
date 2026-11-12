@@ -74,3 +74,4 @@ class PerceptionPipeline:
             detected_obstacles=detected_obstacles,
             timestamp=scan.timestamp,
         )
+

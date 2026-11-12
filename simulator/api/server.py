@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from autonomy.interfaces.types import ControlCommand
 from simulator.simulation import Simulation
 from simulator.world.road import RoadMap
+from simulator.scenarios import SCENARIOS, get_scenario
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 VIEWER_DIR = PROJECT_ROOT / "viewer"
@@ -50,6 +51,12 @@ class CommandRequest(BaseModel):
 class ResetRequest(BaseModel):
     road_type: str = "s_curve"
     road_length_m: float = 140.0
+    scenario_id: str | None = None
+    autopilot: bool | None = None
+
+
+class AutopilotRequest(BaseModel):
+    enabled: bool
 
 
 @app.get("/")
@@ -63,6 +70,26 @@ async def root():
 @app.get("/api/status")
 async def get_status():
     return sim.snapshot()
+
+
+@app.get("/api/scenarios")
+async def list_scenarios():
+    return {
+        "scenarios": [
+            {
+                "id": s.scenario_id,
+                "name": s.name,
+                "description": s.description,
+            }
+            for s in SCENARIOS.values()
+        ]
+    }
+
+
+@app.post("/api/autopilot")
+async def post_autopilot(req: AutopilotRequest):
+    sim.autopilot = req.enabled
+    return {"status": "ok", "autopilot": sim.autopilot}
 
 
 @app.post("/api/command")
@@ -81,8 +108,12 @@ async def post_command(req: CommandRequest):
 async def post_reset(req: ResetRequest):
     global sim, current_command
     current_command = ControlCommand()
-    road = RoadMap(road_type=req.road_type, road_length_m=req.road_length_m)
-    sim = Simulation(dt_sec=0.02, road=road)
+    use_autopilot = req.autopilot if req.autopilot is not None else sim.autopilot
+    if req.scenario_id:
+        road = get_scenario(req.scenario_id).builder()
+    else:
+        road = RoadMap(road_type=req.road_type, road_length_m=req.road_length_m)
+    sim = Simulation(dt_sec=0.02, road=road, autopilot=use_autopilot)
     sim.reset()
     return {"status": "reset", "snapshot": sim.snapshot()}
 
@@ -106,6 +137,13 @@ async def websocket_endpoint(websocket: WebSocket):
                         brake=float(msg.get("brake", 0.0)),
                         emergency_stop=bool(msg.get("estop", False)),
                     )
+                elif action == "set_autopilot":
+                    sim.autopilot = bool(msg.get("enabled", False))
+                elif action == "load_scenario":
+                    scenario_id = msg.get("scenario_id", "s_curve_avoidance")
+                    sim.road = get_scenario(scenario_id).builder()
+                    sim.reset()
+                    current_command = ControlCommand()
                 elif action == "reset":
                     road_type = msg.get("road_type", "s_curve")
                     road = RoadMap(road_type=road_type, road_length_m=140.0)
@@ -115,8 +153,16 @@ async def websocket_endpoint(websocket: WebSocket):
             except asyncio.TimeoutError:
                 pass
 
-            # Step physics by dt
-            sim.step(current_command)
+            # Step physics by dt (autopilot uses None to invoke NavigationStack)
+            if sim.autopilot:
+                if not sim.collision and not sim.goal_reached:
+                    sim.step(None)
+                else:
+                    # Keep vehicle halted smoothly after goal/collision
+                    sim.step(ControlCommand(brake=1.0, emergency_stop=True))
+            else:
+                sim.step(current_command)
+
             payload = json.dumps(sim.snapshot())
 
             await websocket.send_text(payload)

@@ -22,7 +22,7 @@ class OccupancyGridConfig:
     """
     Configuration parameters for occupancy grid and cost map generation.
     """
-    resolution: float = 0.25               # Cell size [m]
+    resolution: float = 0.35               # Cell size [m]
     width_m: float = 60.0                  # Map horizontal extent [m]
     height_m: float = 60.0                 # Map vertical extent [m]
     vehicle_length: float = 4.50           # Vehicle footprint length [m]
@@ -86,6 +86,7 @@ class OccupancyGrid:
         vehicle_state: VehicleState,
         obstacle_points: np.ndarray,
         ground_points: Optional[np.ndarray] = None,
+        recompute_cost: bool = True,
     ):
         """
         Updates the occupancy grid using ray-tracing from vehicle position to obstacle/ground points.
@@ -139,9 +140,14 @@ class OccupancyGrid:
                         self.grid[int(h_row), int(h_col)] = OCCUPIED
 
         # Compute safety inflation cost map
-        self._compute_cost_map()
+        if recompute_cost:
+            self._compute_cost_map()
 
-    def update_from_detected_obstacles(self, detected_obstacles: List[DetectedObstacle]):
+    def update_from_detected_obstacles(
+        self,
+        detected_obstacles: List[DetectedObstacle],
+        recompute_cost: bool = True,
+    ):
         """
         Directly burns detected bounding box footprints into the occupancy grid.
         """
@@ -167,7 +173,8 @@ class OccupancyGrid:
                 if cell:
                     self.grid[cell[1], cell[0]] = OCCUPIED
 
-        self._compute_cost_map()
+        if recompute_cost:
+            self._compute_cost_map()
 
     def _compute_cost_map(self):
         """

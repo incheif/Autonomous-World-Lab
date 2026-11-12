@@ -113,3 +113,4 @@ def test_occupancy_grid_snapshot_to_dict():
     assert "costs" in data
     assert data["timestamp"] == 1.23
     assert len(data["costs"]) > 0
+
