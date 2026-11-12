@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from autonomy.interfaces.types import ControlCommand
 from simulator.simulation import Simulation
 from simulator.world.road import RoadMap
+from simulator.world.traffic import TrafficManager
 from simulator.scenarios import SCENARIOS, get_scenario
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -33,8 +34,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global simulation instance
-sim: Simulation = Simulation(dt_sec=0.02, road=RoadMap(road_type="s_curve", road_length_m=140.0))
+# Global simulation instance - default to city_traffic scenario with dual lanes & NPC traffic
+sim: Simulation = Simulation(
+    dt_sec=0.02,
+    road=get_scenario("city_traffic").builder(),
+    traffic=TrafficManager(enabled=True, num_vehicles=6),
+    autopilot=True,
+)
 active_connections: Set[WebSocket] = set()
 
 # Current live control command from client
@@ -140,8 +146,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif action == "set_autopilot":
                     sim.autopilot = bool(msg.get("enabled", False))
                 elif action == "load_scenario":
-                    scenario_id = msg.get("scenario_id", "s_curve_avoidance")
-                    sim.road = get_scenario(scenario_id).builder()
+                    scenario_id = msg.get("scenario_id", "city_traffic")
+                    spec = get_scenario(scenario_id)
+                    sim.road = spec.builder()
+                    num_npc = 6 if scenario_id == "city_traffic" else 0
+                    sim.traffic = TrafficManager(num_vehicles=num_npc)
+                    sim.traffic.initialize(sim.road)
                     sim.reset()
                     current_command = ControlCommand()
                 elif action == "reset":

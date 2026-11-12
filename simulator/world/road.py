@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Any, Optional
 
 from autonomy.interfaces.types import Obstacle
+from simulator.world.scenery import CitySceneryGenerator
 
 
 @dataclass
@@ -49,6 +50,8 @@ class RoadMap:
 
         self.segments: List[RoadSegment] = []
         self.obstacles: List[Obstacle] = []
+        self._scenery_generator = CitySceneryGenerator()
+        self._scenery_cache: Optional[Dict[str, Any]] = None
 
         # Start and Goal poses (x, y, yaw)
         self.start_pose: Tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -216,8 +219,23 @@ class RoadMap:
         dist = math.sqrt((x - gx) ** 2 + (y - gy) ** 2)
         return dist <= tolerance_m
 
+    def get_scenery(self) -> Dict[str, Any]:
+        """Returns procedural buildings, trees, and streetlights along road corridor."""
+        if self._scenery_cache is None:
+            self._scenery_cache = self._scenery_generator.generate(self)
+        return self._scenery_cache
+
     def to_dict(self) -> Dict[str, Any]:
-        """Serializes road geometry and obstacles for Three.js visualizer."""
+        """Serializes road geometry, lanes, scenery, and obstacles for Three.js visualizer."""
+        half_lane = self.lane_width_m / 2.0
+        left_lane = []
+        right_lane = []
+        for s in self.segments:
+            nx = -math.sin(s.yaw)
+            ny = math.cos(s.yaw)
+            left_lane.append([round(s.center_x + half_lane * nx, 3), round(s.center_y + half_lane * ny, 3)])
+            right_lane.append([round(s.center_x - half_lane * nx, 3), round(s.center_y - half_lane * ny, 3)])
+
         return {
             "road_type": self.road_type,
             "road_length_m": self.road_length_m,
@@ -227,8 +245,11 @@ class RoadMap:
             "centerline": [[round(s.center_x, 3), round(s.center_y, 3)] for s in self.segments],
             "left_boundary": [[round(s.left_x, 3), round(s.left_y, 3)] for s in self.segments],
             "right_boundary": [[round(s.right_x, 3), round(s.right_y, 3)] for s in self.segments],
+            "left_lane": left_lane,
+            "right_lane": right_lane,
             "start_pose": [round(v, 4) for v in self.start_pose],
             "goal_pose": [round(v, 4) for v in self.goal_pose],
             "obstacles": [obs.to_dict() for obs in self.obstacles],
+            "scenery": self.get_scenery(),
         }
 

@@ -115,7 +115,40 @@ def build_blocked_road() -> RoadMap:
     )
 
 
+def build_city_traffic() -> RoadMap:
+    return RoadMap(
+        road_type="straight",
+        road_length_m=160.0,
+        lane_width_m=3.75,
+        num_lanes=2,
+        obstacles=[
+            Obstacle(
+                obstacle_id="construction_barrier",
+                x=90.0,
+                y=-1.5,
+                z=0.0,
+                length=3.0,
+                width=1.8,
+                height=1.4,
+                yaw=0.0,
+                obstacle_type="barrier",
+                color="#f59e0b",
+            )
+        ],
+    )
+
+
 SCENARIOS: Dict[str, ScenarioSpec] = {
+    "city_traffic": ScenarioSpec(
+        scenario_id="city_traffic",
+        name="Living City Dual-Lane Traffic",
+        description="Dual-lane city road with moving NPC cars (IDM car following), roadside trees, footpaths, and high-rise skyline.",
+        seed=42,
+        max_duration_sec=40.0,
+        expect_goal_reached=True,
+        expect_safe_stop=False,
+        builder=build_city_traffic,
+    ),
     "straight_clear": ScenarioSpec(
         scenario_id="straight_clear",
         name="Straight Clear Road",

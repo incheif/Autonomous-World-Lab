@@ -14,6 +14,7 @@ from autonomy.navigation import NavigationStack
 from simulator.clock import SimulationClock
 from simulator.vehicle.kinematic_bicycle import KinematicBicycleModel, VehicleParameters
 from simulator.world.road import RoadMap
+from simulator.world.traffic import TrafficManager
 from simulator.logger import SimulationLogger
 from simulator.sensors.lidar import LidarSensor, LidarParameters
 
@@ -33,6 +34,7 @@ class Simulation:
         perception: Optional[PerceptionPipeline] = None,
         occupancy_grid: Optional[OccupancyGrid] = None,
         navigation: Optional[NavigationStack] = None,
+        traffic: Optional[TrafficManager] = None,
         autopilot: bool = False,
         sensor_interval: int = 5,
     ):
@@ -47,6 +49,8 @@ class Simulation:
         self.perception: PerceptionPipeline = perception or PerceptionPipeline()
         self.occupancy_grid: OccupancyGrid = occupancy_grid or OccupancyGrid()
         self.navigation: NavigationStack = navigation or NavigationStack()
+        self.traffic: TrafficManager = traffic or TrafficManager(num_vehicles=0)
+        self.traffic.initialize(self.road)
         self.autopilot: bool = autopilot
         self.sensor_interval: int = max(1, int(sensor_interval))
         self.logger: SimulationLogger = SimulationLogger()
@@ -77,6 +81,7 @@ class Simulation:
         self.logger.clear()
         state = self.vehicle.reset(x=sx, y=sy, yaw=syaw, velocity=0.0, timestamp=0.0)
         self.occupancy_grid.reset(center_x=sx, center_y=sy)
+        self.traffic.initialize(self.road)
         self.navigation.reset(self.road, timestamp=0.0)
         self._update_perception_and_mapping()
         return state
@@ -96,8 +101,10 @@ class Simulation:
         """
         Runs perception and mapping pipelines on the latest sensor sweep.
         Perception only ingests noisy_scan (NO ground truth access).
+        LiDAR scans both static obstacles and dynamic NPC traffic vehicles.
         """
-        self.last_observation = self.lidar.scan(self.vehicle.state, self.road.obstacles)
+        all_obstacles = list(self.road.obstacles) + self.traffic.get_obstacles()
+        self.last_observation = self.lidar.scan(self.vehicle.state, all_obstacles)
         self.last_perception = self.perception.process(
             self.last_observation.noisy_scan,
             self.vehicle.state,
@@ -136,6 +143,9 @@ class Simulation:
         new_state = self.vehicle.step(cmd, self.clock.dt)
         self.clock.tick()
 
+        # Step dynamic NPC traffic vehicles (with IDM car-following and lane adhering)
+        self.traffic.step(self.clock.dt, self.road, ego_state=new_state)
+
         # Update perception and mapping pipelines at sensor rate (plus step 1)
         if self.clock.step_count == 1 or (self.clock.step_count % self.sensor_interval == 0):
             self._update_perception_and_mapping()
@@ -143,11 +153,15 @@ class Simulation:
         # Boundary and obstacle collision checks
         corners = self.vehicle.get_corners()
         boundary_coll = self.road.check_boundary_collision(corners)
-        obstacle_coll = self.road.check_obstacle_collision(corners)
+        static_obs_coll = self.road.check_obstacle_collision(corners)
+        traffic_coll = self.traffic.check_collision_with_ego(corners)
+        obstacle_coll = static_obs_coll or traffic_coll
         self.collision = boundary_coll or obstacle_coll
         self.goal_reached = self.road.check_goal_reached(new_state.x, new_state.y)
 
-        if obstacle_coll:
+        if traffic_coll:
+            self.failure_reason = "COLLISION_TRAFFIC"
+        elif static_obs_coll:
             self.failure_reason = "COLLISION_OBSTACLE"
         elif boundary_coll:
             self.failure_reason = "COLLISION_BOUNDARY"
@@ -270,6 +284,7 @@ class Simulation:
                 "planner_status": self.navigation.planner_status if self.autopilot else "MANUAL",
                 "detected_obstacles_count": len(self.last_perception.detected_obstacles) if self.last_perception else 0,
             },
+            "traffic": self.traffic.to_dict(),
             "road": self.road.to_dict(),
             "lidar": self.last_observation.noisy_scan.to_dict(max_points=1200) if self.last_observation else None,
             "lidar_ground_truth_returns": int(np.sum(self.last_observation.ground_truth_scan.valid_mask)) if self.last_observation else 0,

@@ -112,6 +112,8 @@ class Obstacle:
     height: float = 1.5  # Vertical height [m]
     yaw: float = 0.0
     velocity: float = 0.0
+    obstacle_type: str = "box"  # "box", "sedan", "suv", "truck", "barrier"
+    color: str = "#e11d48"
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -124,6 +126,8 @@ class Obstacle:
             "height": round(self.height, 4),
             "yaw": round(self.yaw, 4),
             "velocity": round(self.velocity, 4),
+            "type": self.obstacle_type,
+            "color": self.color,
         }
 
 
