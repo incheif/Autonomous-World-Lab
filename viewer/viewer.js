@@ -905,15 +905,22 @@ class SimulationViewer {
 
     const connect = () => {
       this.ws = new WebSocket(wsUrl);
+      this.ws.binaryType = "arraybuffer";
 
       this.ws.onopen = () => {
         pill.className = "pill pill-online";
-        pillText.textContent = "CONNECTED (50Hz)";
+        pillText.textContent = "CONNECTED (50Hz · Ultra-Low Latency)";
       };
 
       this.ws.onmessage = (event) => {
         try {
-          const snapshot = jsonParseSafe(event.data);
+          let str;
+          if (event.data instanceof ArrayBuffer) {
+            str = new TextDecoder().decode(event.data);
+          } else {
+            str = event.data;
+          }
+          const snapshot = jsonParseSafe(str);
           if (snapshot) this.handleSnapshot(snapshot);
         } catch (e) {
           console.error("WS Parse error", e);
@@ -1020,15 +1027,17 @@ class SimulationViewer {
       this.currState = { ...this.targetState };
     }
 
-    // Check if road needs rebuilding
-    const obsKey = s.road.obstacles ? s.road.obstacles.map((o) => `${o.id}:${o.x}:${o.y}`).join("|") : "";
-    const sig = `${s.road.road_type}_${s.road.road_length_m}_${obsKey}`;
-    if (!this.roadSignature || this.roadSignature !== sig) {
-      this.roadSignature = sig;
-      this.currentRoadType = s.road.road_type;
-      this.trailPoints = [];
-      if (this.trailLine) this.trailLine.geometry.setDrawRange(0, 0);
-      this.rebuildRoad(s.road);
+    // Check if road needs rebuilding (only present when road changes or on first frame)
+    if (s.road) {
+      const obsKey = s.road.obstacles ? s.road.obstacles.map((o) => `${o.id}:${o.x}:${o.y}`).join("|") : "";
+      const sig = `${s.road.road_type}_${s.road.road_length_m}_${obsKey}`;
+      if (!this.roadSignature || this.roadSignature !== sig) {
+        this.roadSignature = sig;
+        this.currentRoadType = s.road.road_type;
+        this.trailPoints = [];
+        if (this.trailLine) this.trailLine.geometry.setDrawRange(0, 0);
+        this.rebuildRoad(s.road);
+      }
     }
 
     // Dynamic Traffic NPCs
@@ -1279,25 +1288,30 @@ class SimulationViewer {
     });
 
     window.addEventListener("keydown", (e) => {
+      let changed = false;
       const code = e.code;
-      if (code === "KeyW" || code === "ArrowUp") this.keys.up = true;
-      if (code === "KeyS" || code === "ArrowDown") this.keys.down = true;
-      if (code === "KeyA" || code === "ArrowLeft") this.keys.left = true;
-      if (code === "KeyD" || code === "ArrowRight") this.keys.right = true;
+      if (code === "KeyW" || code === "ArrowUp") { this.keys.up = true; changed = true; }
+      if (code === "KeyS" || code === "ArrowDown") { this.keys.down = true; changed = true; }
+      if (code === "KeyA" || code === "ArrowLeft") { this.keys.left = true; changed = true; }
+      if (code === "KeyD" || code === "ArrowRight") { this.keys.right = true; changed = true; }
       if (code === "Space") {
         this.keys.space = true;
+        changed = true;
         e.preventDefault();
       }
       if (code === "KeyR") this.resetSimulation(this.currentRoadType || "s_curve");
+      if (changed) this.sendControlCommand();
     });
 
     window.addEventListener("keyup", (e) => {
+      let changed = false;
       const code = e.code;
-      if (code === "KeyW" || code === "ArrowUp") this.keys.up = false;
-      if (code === "KeyS" || code === "ArrowDown") this.keys.down = false;
-      if (code === "KeyA" || code === "ArrowLeft") this.keys.left = false;
-      if (code === "KeyD" || code === "ArrowRight") this.keys.right = false;
-      if (code === "Space") this.keys.space = false;
+      if (code === "KeyW" || code === "ArrowUp") { this.keys.up = false; changed = true; }
+      if (code === "KeyS" || code === "ArrowDown") { this.keys.down = false; changed = true; }
+      if (code === "KeyA" || code === "ArrowLeft") { this.keys.left = false; changed = true; }
+      if (code === "KeyD" || code === "ArrowRight") { this.keys.right = false; changed = true; }
+      if (code === "Space") { this.keys.space = false; changed = true; }
+      if (changed) this.sendControlCommand();
     });
   }
 

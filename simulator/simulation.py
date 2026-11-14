@@ -235,9 +235,10 @@ class Simulation:
 
         return self.logger.summary()
 
-    def snapshot(self) -> Dict[str, Any]:
+    def snapshot(self, include_static_road: bool = False) -> Dict[str, Any]:
         """
         Serializes current state snapshot for WebSocket / Three.js telemetry.
+        If include_static_road is False, omits static road geometry/scenery for ultra-low latency.
         """
         s = self.vehicle.state
         corners = self.vehicle.get_corners()
@@ -261,7 +262,7 @@ class Simulation:
 
         lookahead = self.navigation.controller.last_lookahead_point
 
-        return {
+        data: Dict[str, Any] = {
             "sim_time": round(self.clock.time, 4),
             "step": self.clock.step_count,
             "dt": self.clock.dt,
@@ -285,7 +286,6 @@ class Simulation:
                 "detected_obstacles_count": len(self.last_perception.detected_obstacles) if self.last_perception else 0,
             },
             "traffic": self.traffic.to_dict(),
-            "road": self.road.to_dict(),
             "lidar": self.last_observation.noisy_scan.to_dict(max_points=1200) if self.last_observation else None,
             "lidar_ground_truth_returns": int(np.sum(self.last_observation.ground_truth_scan.valid_mask)) if self.last_observation else 0,
             "detected_obstacles": [obs.to_dict() for obs in self.last_perception.detected_obstacles] if self.last_perception else [],
@@ -296,4 +296,9 @@ class Simulation:
                 "lookahead_point": [round(lookahead[0], 3), round(lookahead[1], 3)] if lookahead else None,
             },
         }
+
+        if include_static_road:
+            data["road"] = self.road.to_dict()
+
+        return data
 

@@ -9,6 +9,14 @@ import json
 from pathlib import Path
 from typing import Set
 
+try:
+    import orjson
+    def dump_json_bytes(obj) -> bytes:
+        return orjson.dumps(obj)
+except ImportError:
+    def dump_json_bytes(obj) -> bytes:
+        return json.dumps(obj).encode("utf-8")
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
@@ -129,11 +137,16 @@ async def websocket_endpoint(websocket: WebSocket):
     global current_command
     await websocket.accept()
     active_connections.add(websocket)
-    try:
-        while True:
-            # Check for incoming client control messages
-            try:
-                data = await asyncio.wait_for(websocket.receive_text(), timeout=0.02)
+
+    # Initial frame sends full road data so client builds 3D meshes immediately
+    sent_road_signature: str | None = None
+
+    # Asynchronous receiver task so incoming keyboard/control commands are processed instantly with zero latency
+    async def receiver():
+        global current_command, sim
+        try:
+            while True:
+                data = await websocket.receive_text()
                 msg = json.loads(data)
                 action = msg.get("action")
                 if action == "control":
@@ -160,8 +173,17 @@ async def websocket_endpoint(websocket: WebSocket):
                     sim.road = road
                     sim.reset()
                     current_command = ControlCommand()
-            except asyncio.TimeoutError:
-                pass
+        except (WebSocketDisconnect, asyncio.CancelledError):
+            pass
+        except Exception:
+            pass
+
+    rx_task = asyncio.create_task(receiver())
+
+    try:
+        loop = asyncio.get_running_loop()
+        while True:
+            t_start = loop.time()
 
             # Step physics by dt (autopilot uses None to invoke NavigationStack)
             if sim.autopilot:
@@ -173,16 +195,28 @@ async def websocket_endpoint(websocket: WebSocket):
             else:
                 sim.step(current_command)
 
-            payload = json.dumps(sim.snapshot())
+            current_sig = f"{sim.road.road_type}_{sim.road.road_length_m}"
+            include_road = (sent_road_signature != current_sig)
+            if include_road:
+                sent_road_signature = current_sig
 
-            await websocket.send_text(payload)
-            await asyncio.sleep(0.02)  # 50 Hz loop
+            snap = sim.snapshot(include_static_road=include_road)
+            payload_bytes = dump_json_bytes(snap)
+
+            await websocket.send_bytes(payload_bytes)
+
+            # Precise timing compensation: subtract actual step compute time from 0.02s
+            elapsed = loop.time() - t_start
+            sleep_time = max(0.001, 0.02 - elapsed)
+            await asyncio.sleep(sleep_time)
 
     except WebSocketDisconnect:
-        active_connections.remove(websocket)
+        active_connections.discard(websocket)
     except Exception:
-        if websocket in active_connections:
-            active_connections.remove(websocket)
+        active_connections.discard(websocket)
+    finally:
+        rx_task.cancel()
+        active_connections.discard(websocket)
 
 
 # Mount static assets for Three.js viewer

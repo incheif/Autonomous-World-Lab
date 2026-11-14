@@ -160,21 +160,23 @@ class LidarScan:
 
         return np.column_stack((px, py, pz))
 
-    def to_dict(self, max_points: int = 1500) -> Dict[str, Any]:
+    def to_dict(self, max_points: int = 1200) -> Dict[str, Any]:
         """
         Serializes scan points for WebSocket / Three.js telemetry.
-        Decimates points if needed to maintain high network throughput.
+        Decimates points if needed and uses fast vectorized numpy rounding.
         """
         pts = self.points_local
         if len(pts) > max_points:
             indices = np.linspace(0, len(pts) - 1, max_points, dtype=int)
             pts = pts[indices]
 
+        rounded_pts = np.round(pts, 3).tolist()
+
         return {
             "timestamp": round(self.timestamp, 4),
             "total_beams": int(len(self.ranges)),
             "valid_returns": int(np.sum(self.valid_mask)),
-            "points": [[round(float(p[0]), 3), round(float(p[1]), 3), round(float(p[2]), 3)] for p in pts],
+            "points": rounded_pts,
         }
 
 
